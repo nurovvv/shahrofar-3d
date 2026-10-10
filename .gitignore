@@ -1,0 +1,5 @@
+node_modules
+dist
+publish
+.claude
+.DS_Store

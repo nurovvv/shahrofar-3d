@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>Skyline Residence</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="stage"></div>
+    <div id="labels"></div>
+
+    <div id="ext-ui">
+      <header class="brand panel">
+        <div class="logo">S</div>
+        <div>
+          <div class="brand-name">Skyline Residence</div>
+          <div class="brand-sub">Interactive 3D demo</div>
+        </div>
+      </header>
+
+      <nav id="floors" class="panel" aria-label="Floors"></nav>
+      <aside id="side" class="panel"></aside>
+
+      <div id="legend" class="panel">
+        <span><i style="background: var(--ok)"></i>Available</span>
+        <span><i style="background: var(--warn)"></i>Reserved</span>
+        <span><i style="background: var(--bad)"></i>Sold</span>
+      </div>
+      <div id="hint">Drag to rotate · Scroll to zoom · Click a floor</div>
+    </div>
+
+    <div id="tooltip"></div>
+
+    <div id="walk-ui" hidden>
+      <div class="walk-top">
+        <div id="walk-title" class="panel chip-lg"></div>
+        <button id="exit-walk" class="btn">✕ Exit to building</button>
+      </div>
+      <div id="walk-help" class="panel">Drag to look around · Click the floor to walk there · <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows to move</div>
+      <div id="minimap" class="panel"><canvas></canvas></div>
+      <div id="joystick"><div class="knob"></div></div>
+    </div>
+
+    <div id="toast"></div>
+    <div id="fade"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
