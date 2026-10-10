@@ -2,6 +2,8 @@
 
 Interactive 3D model of the riverside complex (three towers on a curved retail podium) for real-estate sales: pick a tower and a floor, open an apartment card with its floor plan and price, then walk around inside it.
 
+![The model rendered in Blender from the camera of the aerial marketing render](docs/aerial.jpg)
+
 Built with [Three.js](https://threejs.org) and [Vite](https://vitejs.dev). Demo data (apartments, prices, statuses) lives in `src/data.js`; floor plans and furniture in `src/layouts.js`.
 
 ## The 3D model

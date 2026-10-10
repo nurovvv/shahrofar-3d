@@ -21,9 +21,18 @@ function tuneMaterial(m) {
   if (m.name.startsWith('Leaves') || m.name === 'Shrub' || m.name === 'Grass' || m.name === 'Lawn') m.envMapIntensity = 0.4;
 }
 
+// The published artifact page can't serve .glb files, so it gets the same bytes base64-encoded
+// in a JSON file ({ "glb": "..." }); everywhere else the .glb is loaded directly.
+async function loadModel(loader, url, onProgress) {
+  if (!url.endsWith('.json')) return loader.loadAsync(url, (e) => e.total && onProgress?.(e.loaded / e.total));
+  const { glb } = await (await fetch(url)).json();
+  const bytes = Uint8Array.from(atob(glb), (c) => c.charCodeAt(0));
+  return loader.parseAsync(bytes.buffer, '');
+}
+
 export async function loadComplex(apartments, onProgress) {
   const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
-  const gltf = await loader.loadAsync(MODEL_URL, (e) => e.total && onProgress?.(e.loaded / e.total));
+  const gltf = await loadModel(loader, MODEL_URL, onProgress);
   const root = gltf.scene;
   const o = toScene(0, 0);
   root.position.set(o.x, 0, o.z);
