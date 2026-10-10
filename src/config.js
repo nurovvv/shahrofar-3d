@@ -1,25 +1,41 @@
-// Building dimensions (meters). Floor 1 is the lobby, floors 2..FLOORS hold apartments.
-export const FLOORS = 10;
-export const FLOOR_H = 3.2;
-export const SLAB = 0.3;
-export const CEIL = FLOOR_H - SLAB; // clear room height
-export const UNIT_D = 6.65; // apartment depth, corridor wall -> facade
-export const CORR = 1.1; // corridor half width incl. wall
+// The complex: three towers on a retail podium. Tower geometry (floor levels, apartment
+// positions) comes from the Blender build in blender/, exported to model/complex.json.
+import complex from './model/complex.json';
 
-// Four apartments per floor. Each apartment is described in its own local frame:
-// u runs along the facade from the party wall, v runs from the corridor to the windows.
-// World position: x = ox + sx * u, z = sz * (CORR + v).
-export const UNIT_DEFS = [
-  { key: 'A', sx: -1, sz: 1, ox: -2.1, W: 9.65, type: 'small', view: 'Boulevard & park' },
-  { key: 'B', sx: 1, sz: 1, ox: -1.9, W: 13.65, type: 'large', view: 'Boulevard & park' },
-  { key: 'C', sx: 1, sz: -1, ox: 2.1, W: 9.65, type: 'small', view: 'Quiet courtyard' },
-  { key: 'D', sx: -1, sz: -1, ox: 1.9, W: 13.65, type: 'large', view: 'Quiet courtyard' },
-];
+export const MODEL_URL = `${import.meta.env.BASE_URL}models/shahrofar.glb`;
+
+export const CEIL = 2.9; // clear room height inside the apartments
+export const UNIT_D = 6.65; // apartment depth, corridor wall -> facade
+
+// Site plan coordinates (metres, x east, y north) -> scene (x, z) with the complex at the origin.
+const [CX, CY] = complex.site_centre;
+export const toScene = (x, y) => ({ x: x - CX, z: -(y - CY) });
+
+const rot2 = (deg, [x, y]) => {
+  const a = (deg * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+  return [c * x - s * y, s * x + c * y];
+};
+
+// Tower-local plan point / direction -> scene
+export function towerPoint(t, p) {
+  const [x, y] = rot2(t.rot, p);
+  return toScene(t.origin[0] + x, t.origin[1] + y);
+}
+export function towerDir(t, d) {
+  const [x, y] = rot2(t.rot, d);
+  return { x, z: -y };
+}
+
+export const TOWERS = complex.towers;
+export const RESIDENTIAL = TOWERS.filter((t) => !t.hotel);
+export const towerByKey = Object.fromEntries(TOWERS.map((t) => [t.key, t]));
+export const TREES = { protos: complex.tree_protos, list: complex.trees };
+
+// Apartment order on every floor, clockwise from the land side.
+export const UNIT_KEYS = ['S', 'E', 'N', 'W'];
 
 export const STATUS = {
   available: { label: 'Available', color: 0x22b573, css: '#22b573' },
   reserved: { label: 'Reserved', color: 0xf0a92e, css: '#f0a92e' },
   sold: { label: 'Sold', color: 0xe14d4d, css: '#e14d4d' },
 };
-
-export const floorBase = (floor) => (floor - 1) * FLOOR_H;

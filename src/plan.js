@@ -10,7 +10,8 @@ const ROOM_FILL = {
 };
 const SHORT = { 'Living room & kitchen': 'Living / kitchen' };
 
-export const planFlip = (def) => -def.sx * def.sz < 0;
+// Mirror the plan when the apartment's (u, v) frame is mirrored as seen from above (north up).
+export const planFlip = ({ eu, ev }) => eu.z * ev.x - eu.x * ev.z < 0;
 
 export function planTransform(layout, cw, ch, pad, flip) {
   const s = Math.min((cw - 2 * pad) / layout.W, (ch - 2 * pad) / layout.D);

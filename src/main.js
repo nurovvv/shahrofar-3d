@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { FLOORS, FLOOR_H, STATUS, floorBase } from './config.js';
+import { RESIDENTIAL, STATUS, towerByKey } from './config.js';
 import { apartments, aptsOnFloor } from './data.js';
 import { buildWorld } from './world.js';
-import { buildBuilding } from './building.js';
+import { loadComplex } from './building.js';
 import { buildInterior } from './interior.js';
 import { WalkControls } from './walk.js';
 import { drawPlan, planFlip, planTransform } from './plan.js';
@@ -28,29 +28,45 @@ const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 scene.environmentIntensity = 0.45;
 
-const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.5, 4000);
-const HOME = { pos: new THREE.Vector3(62, 30, 70), target: new THREE.Vector3(0, 14, 0) };
+const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.5, 6000);
+// the aerial view of the marketing render: from the land side, river and bridge behind
+const HOME = { pos: new THREE.Vector3(-12, 150, 190), target: new THREE.Vector3(5, 28, -5) };
 camera.position.copy(HOME.pos);
 
 const controls = new OrbitControls(camera, canvas);
 controls.target.copy(HOME.target);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
-controls.minDistance = 8;
-controls.maxDistance = 180;
+controls.minDistance = 12;
+controls.maxDistance = 480;
 controls.maxPolarAngle = Math.PI * 0.48;
 controls.autoRotate = true;
 controls.autoRotateSpeed = 0.35;
 
 buildWorld(scene);
-const building = buildBuilding(apartments);
-scene.add(building.group);
 const walk = new WalkControls(camera, canvas);
+
+let building = null; // set once the model has loaded
+const loadingEl = $('#loading');
+loadComplex(apartments, (k) => (loadingEl.querySelector('b').textContent = `${Math.round(k * 100)}%`))
+  .then((b) => {
+    building = b;
+    scene.add(b.group);
+    loadingEl.hidden = true;
+    refresh();
+  })
+  .catch((err) => {
+    console.error(err);
+    loadingEl.textContent = 'Could not load the 3D model.';
+  });
 
 // ---------- state ----------
 const state = {
   mode: 'overview', // overview | floor | walk
+  tower: null, // open tower + floor in the floor view
   floor: null,
+  listTower: RESIDENTIAL[0].key, // tower shown in the floor list
+  hoverHotel: false,
   apt: null,
   hoverApt: null,
   filter: { rooms: 0, availableOnly: false },
@@ -59,6 +75,8 @@ let dollhouse = []; // interiors shown in the cut-away floor view
 let walkInterior = null;
 let lastInteraction = performance.now();
 
+const sameFloor = (a, b) => a && b && a.tower === b.tower && a.floor === b.floor;
+const isOpen = (a) => a.tower === state.tower && a.floor === state.floor;
 const filterActive = () => state.filter.rooms > 0 || state.filter.availableOnly;
 const matches = (a) =>
   (!state.filter.rooms || a.rooms === state.filter.rooms) && (!state.filter.availableOnly || a.status === 'available');
@@ -72,36 +90,49 @@ function flyTo(pos, target, dur = 1.1) {
 function azimuth() {
   return Math.atan2(camera.position.x - controls.target.x, camera.position.z - controls.target.z);
 }
-function floorView(floor) {
-  const target = new THREE.Vector3(0, floorBase(floor), 0);
+function floorCentre(tower, floor) {
+  const list = aptsOnFloor(tower, floor);
+  const c = new THREE.Vector3();
+  for (const a of list) c.add(building.units.get(a.id).center);
+  return c.divideScalar(list.length);
+}
+function floorView(tower, floor) {
+  const target = floorCentre(tower, floor);
   const az = azimuth();
-  return { pos: target.clone().add(new THREE.Vector3(Math.sin(az) * 32, 36, Math.cos(az) * 32)), target };
+  return { pos: target.clone().add(new THREE.Vector3(Math.sin(az) * 36, 40, Math.cos(az) * 36)), target };
 }
 function aptView(apt) {
   const c = building.units.get(apt.id).center;
   const target = new THREE.Vector3(c.x, c.y + 0.5, c.z);
-  const dir = new THREE.Vector3(c.x * 0.6, 0, c.z).normalize();
-  return { pos: target.clone().add(dir.multiplyScalar(15)).add(new THREE.Vector3(0, 21, 0)), target };
+  const { ev } = apt.place; // towards the apartment's windows
+  return { pos: target.clone().add(new THREE.Vector3(ev.x, 0, ev.z).multiplyScalar(20)).add(new THREE.Vector3(0, 26, 0)), target };
 }
 
 // ---------- overlays ----------
 function updateOverlays() {
+  if (!building) return;
+  if (building.hotelPick) {
+    const hp = building.hotelPick;
+    hp.visible = state.hoverHotel && state.mode !== 'walk';
+    hp.material.color.setHex(0xffffff);
+    hp.material.opacity = 0.3;
+  }
   for (const a of apartments) {
     const u = building.units.get(a.id);
     let show = false, color = 0xffffff, op = 0, edges = false;
     if (state.mode === 'overview') {
-      if (state.hoverApt && state.hoverApt.floor === a.floor) {
+      if (sameFloor(state.hoverApt, a)) {
         show = true; op = 0.4; edges = true;
         color = a === state.hoverApt ? 0xffffff : 0xdfeaf3;
       } else if (filterActive() && matches(a)) {
         show = true; color = STATUS[a.status].color; op = 0.5;
       }
     } else if (state.mode === 'floor') {
-      if (a.floor === state.floor) {
+      if (isOpen(a)) {
         show = true; edges = true; color = STATUS[a.status].color;
         op = a === state.apt ? 0.3 : a === state.hoverApt ? 0.22 : 0.08;
         if (filterActive() && !matches(a)) op = 0.02;
-      } else if (state.hoverApt && a.floor === state.hoverApt.floor && a.floor < state.floor) {
+      } else if (sameFloor(state.hoverApt, a)) {
         show = true; op = 0.35;
       }
     }
@@ -120,7 +151,7 @@ function buildLabels() {
   labelsEl.innerHTML = '';
   labels = [];
   if (state.mode !== 'floor') return;
-  for (const a of aptsOnFloor(state.floor)) {
+  for (const a of aptsOnFloor(state.tower, state.floor)) {
     const el = document.createElement('div');
     el.className = 'tag';
     el.style.borderColor = STATUS[a.status].css;
@@ -135,8 +166,8 @@ function buildLabels() {
 const tmp = new THREE.Vector3();
 function updateLabels() {
   for (const { el, apt } of labels) {
-    const c = building.units.get(apt.id).center;
-    tmp.set(c.x, c.y + FLOOR_H + 0.4, c.z).project(camera);
+    const u = building.units.get(apt.id);
+    tmp.set(u.center.x, u.top + 0.6, u.center.z).project(camera);
     const hidden = tmp.z > 1 || (filterActive() && !matches(apt));
     el.style.display = hidden ? 'none' : '';
     el.style.left = `${((tmp.x + 1) / 2) * innerWidth}px`;
@@ -152,27 +183,31 @@ function statusChip(a) {
 }
 
 function renderFloors() {
-  let html = `<h3>Floors</h3><button class="overview-btn" data-act="overview">⌂ Whole building</button>`;
-  for (let f = FLOORS; f >= 1; f--) {
-    if (f === 1) {
-      html += `<button class="floor-btn lobby" disabled><span class="num">1</span><span class="meta">Lobby & entrance</span></button>`;
-      continue;
-    }
-    const list = aptsOnFloor(f);
+  const t = towerByKey[state.listTower];
+  let html = `<div class="tower-tabs">${RESIDENTIAL.map((r) =>
+    `<button data-tower="${r.key}" class="${r.key === t.key ? 'on' : ''}">${r.label}</button>`).join('')}</div>
+    <button class="overview-btn" data-act="overview">⌂ Whole complex</button><h3>${t.label} · floors</h3>`;
+  for (const { floor: f } of [...t.floors].reverse()) {
+    const list = aptsOnFloor(t.key, f);
     const avail = list.filter((a) => a.status === 'available' && matches(a)).length;
     const dots = list.map((a) => `<i class="${matches(a) ? '' : 'dim'}" style="background:${STATUS[a.status].css}"></i>`).join('');
-    html += `<button class="floor-btn ${state.floor === f ? 'active' : ''}" data-floor="${f}">
+    const active = state.mode !== 'overview' && state.tower === t.key && state.floor === f;
+    html += `<button class="floor-btn ${active ? 'active' : ''}" data-floor="${f}">
       <span class="num">${f}</span>
       <span class="meta">${avail} available<span class="dots">${dots}</span></span>
     </button>`;
   }
+  html += `<button class="floor-btn lobby" disabled><span class="num">1–${t.floors[0].floor - 1}</span><span class="meta">Lobby & retail</span></button>`;
   $('#floors').innerHTML = html;
 }
 $('#floors').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
   if (b.dataset.act === 'overview') goOverview();
-  else if (b.dataset.floor) selectFloor(+b.dataset.floor);
+  else if (b.dataset.tower) {
+    state.listTower = b.dataset.tower;
+    renderFloors();
+  } else if (b.dataset.floor) selectFloor(state.listTower, +b.dataset.floor);
 });
 
 function renderSide() {
@@ -183,7 +218,7 @@ function renderSide() {
     const areas = apartments.map((a) => a.area);
     side.innerHTML = `
       <h2>Choose your apartment</h2>
-      <div class="sub">10 floors · ${apartments.length} apartments · 2–3 rooms</div>
+      <div class="sub">${RESIDENTIAL.length} residential towers · ${apartments.length} apartments · 2–3 rooms</div>
       <div class="stats">
         <div class="stat"><b>${avail.length}</b><span>available</span></div>
         <div class="stat"><b>${money.format(from / 1000)}k</b><span>price from</span></div>
@@ -194,18 +229,18 @@ function renderSide() {
         ${[0, 2, 3].map((r) => `<button data-v="${r}" class="${state.filter.rooms === r ? 'on' : ''}">${r ? `${r} rooms` : 'All'}</button>`).join('')}
       </div>
       <label class="toggle"><input type="checkbox" id="only-avail" ${state.filter.availableOnly ? 'checked' : ''}/> Show available only</label>
-      <div class="note">Hover over the building to see each floor, then click to look inside. ${filterActive() ? 'Matching apartments are highlighted on the building.' : ''}</div>`;
+      <div class="note">Hover over a tower to see each floor, then click to look inside. Block A is the hotel. ${filterActive() ? 'Matching apartments are highlighted on the building.' : ''}</div>`;
   } else if (state.mode === 'floor' && !state.apt) {
-    const list = aptsOnFloor(state.floor);
+    const list = aptsOnFloor(state.tower, state.floor);
     side.innerHTML = `
-      <button class="back" data-act="overview">← Whole building</button>
-      <h2>Floor ${state.floor}</h2>
+      <button class="back" data-act="overview">← Whole complex</button>
+      <h2>${towerByKey[state.tower].label} · Floor ${state.floor}</h2>
       <div class="sub">${list.filter((a) => a.status === 'available').length} of ${list.length} apartments available</div>
       <div class="apt-list">
         ${list.map((a) => `
           <button class="apt-row ${filterActive() && !matches(a) ? 'muted' : ''}" data-apt="${a.id}">
             <span class="t">No. ${a.number}</span><span class="p">${money.format(a.price)}</span>
-            <span class="d">${a.rooms} rooms · ${a.area} m² · ${a.def.view}</span><span>${statusChip(a)}</span>
+            <span class="d">${a.rooms} rooms · ${a.area} m² · ${a.view}</span><span>${statusChip(a)}</span>
           </button>`).join('')}
       </div>
       <div class="note">Click an apartment on the model or in this list.</div>`;
@@ -214,15 +249,16 @@ function renderSide() {
     side.innerHTML = `
       <button class="back" data-act="floor">← Floor ${a.floor}</button>
       <h2>Apartment No. ${a.number}</h2>
+      <div class="sub">${a.towerLabel} · Floor ${a.floor}</div>
       <div>${statusChip(a)}</div>
       <canvas class="plan"></canvas>
       <div class="specs">
         <div><span>Rooms</span><b>${a.rooms}</b></div>
         <div><span>Total area</span><b>${a.area} m²</b></div>
-        <div><span>Floor</span><b>${a.floor} of ${FLOORS}</b></div>
+        <div><span>Floor</span><b>${a.floor} of ${a.floors}</b></div>
         <div><span>Ceiling height</span><b>2.9 m</b></div>
         <div style="grid-column: span 2"><span>Layout</span><b>${a.layout.summary}</b></div>
-        <div style="grid-column: span 2"><span>View</span><b>${a.def.view}</b></div>
+        <div style="grid-column: span 2"><span>View</span><b>${a.view}</b></div>
       </div>
       <div class="price">${money.format(a.price)}</div>
       <div class="ppm">${money.format(Math.round(a.price / a.area))} per m²</div>
@@ -230,14 +266,14 @@ function renderSide() {
         <button class="btn primary" data-act="walk">🚶 Walk inside in 3D</button>
         <button class="btn" data-act="request">Request a viewing</button>
       </div>`;
-    drawPlan(side.querySelector('.plan'), a.layout, { flip: planFlip(a.def) });
+    drawPlan(side.querySelector('.plan'), a.layout, { flip: planFlip(a.place) });
   }
 }
 $('#side').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
   if (b.dataset.act === 'overview') goOverview();
-  else if (b.dataset.act === 'floor') selectFloor(state.floor);
+  else if (b.dataset.act === 'floor') selectFloor(state.tower, state.floor);
   else if (b.dataset.act === 'walk') enterWalk(state.apt);
   else if (b.dataset.act === 'request') toast('Demo: this would send the request to the sales team.');
   else if (b.dataset.apt) selectApt(apartments.find((a) => a.id === b.dataset.apt));
@@ -290,33 +326,34 @@ function clearDollhouse() {
 
 function goOverview() {
   clearDollhouse();
-  building.showAll();
-  Object.assign(state, { mode: 'overview', floor: null, apt: null, hoverApt: null });
+  building?.showAll();
+  Object.assign(state, { mode: 'overview', tower: null, floor: null, apt: null, hoverApt: null });
   buildLabels();
   flyTo(HOME.pos, HOME.target, 1.3);
   refresh();
 }
 
-function selectFloor(floor) {
-  if (state.floor !== floor || state.mode !== 'floor') {
+function selectFloor(tower, floor) {
+  if (!building) return;
+  if (state.tower !== tower || state.floor !== floor || state.mode !== 'floor') {
     clearDollhouse();
-    building.showUpTo(floor);
-    for (const a of aptsOnFloor(floor)) {
+    building.showUpTo(tower, floor);
+    for (const a of aptsOnFloor(tower, floor)) {
       const d = buildInterior(a, { full: false });
       scene.add(d.group);
       dollhouse.push(d);
     }
   }
-  Object.assign(state, { mode: 'floor', floor, apt: null });
+  Object.assign(state, { mode: 'floor', tower, floor, listTower: tower, apt: null, hoverHotel: false });
   controls.autoRotate = false;
-  const v = floorView(floor);
+  const v = floorView(tower, floor);
   flyTo(v.pos, v.target);
   buildLabels();
   refresh();
 }
 
 function selectApt(a) {
-  if (state.mode !== 'floor' || state.floor !== a.floor) selectFloor(a.floor);
+  if (state.mode !== 'floor' || !isOpen(a)) selectFloor(a.tower, a.floor);
   state.apt = a;
   const v = aptView(a);
   flyTo(v.pos, v.target);
@@ -337,7 +374,7 @@ function enterWalk(a) {
     clearDollhouse();
     labelsEl.innerHTML = '';
     labels = [];
-    building.showAll(a.floor);
+    building.showAll(a.tower, a.floor);
     walkInterior = buildInterior(a, { full: true });
     scene.add(walkInterior.group);
     state.mode = 'walk';
@@ -369,7 +406,7 @@ function exitWalk() {
     $('#ext-ui').hidden = false;
     $('#walk-ui').hidden = true;
     state.mode = 'overview';
-    selectFloor(a.floor);
+    selectFloor(a.tower, a.floor);
     selectApt(a);
     const v = aptView(a);
     camera.position.copy(v.pos);
@@ -382,7 +419,7 @@ $('#exit-walk').onclick = exitWalk;
 addEventListener('keydown', (e) => {
   if (e.code === 'Escape') {
     if (state.mode === 'walk') exitWalk();
-    else if (state.mode === 'floor' && state.apt) selectFloor(state.floor);
+    else if (state.mode === 'floor' && state.apt) selectFloor(state.tower, state.floor);
     else if (state.mode === 'floor') goOverview();
   }
 });
@@ -391,7 +428,7 @@ addEventListener('keydown', (e) => {
 const mini = $('#minimap canvas');
 let miniBg = null, miniT = null;
 function prepareMinimap(a) {
-  const flip = planFlip(a.def);
+  const flip = planFlip(a.place);
   const off = document.createElement('canvas');
   off.width = mini.clientWidth; // drawPlan sizes by CSS px when the canvas isn't in the page
   off.height = mini.clientHeight;
@@ -457,12 +494,22 @@ addEventListener('wheel', () => (lastInteraction = performance.now()), { passive
 const ray = new THREE.Raycaster();
 const ndc = new THREE.Vector2();
 const tooltip = $('#tooltip');
+// What is under the pointer: { apt } for an apartment, { hotel } for the hotel tower, or null.
 function pick(e) {
+  if (!building) return null;
   ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   ray.setFromCamera(ndc, camera);
-  const list = state.mode === 'floor' ? building.pickables.filter((o) => o.userData.apt.floor <= state.floor) : building.pickables;
-  const hit = ray.intersectObjects(list, false)[0];
-  return hit ? hit.object.userData.apt : null;
+  const hidden = (o) => {
+    const a = o.userData.apt;
+    return state.mode === 'floor' && a && a.tower === state.tower && a.floor > state.floor;
+  };
+  const hit = ray.intersectObjects(building.pickables.filter((o) => !hidden(o)), false)[0];
+  return hit ? hit.object.userData : null;
+}
+function setHoverHotel(on) {
+  if (state.hoverHotel === on) return;
+  state.hoverHotel = on;
+  updateOverlays();
 }
 let down = null;
 canvas.addEventListener('pointerdown', (e) => (down = { x: e.clientX, y: e.clientY }));
@@ -472,32 +519,45 @@ canvas.addEventListener('pointermove', (e) => {
     tooltip.style.opacity = 0;
     return;
   }
-  const a = pick(e);
+  const hit = pick(e);
+  const a = hit?.apt ?? null;
   setHover(a);
+  setHoverHotel(!!hit?.hotel && state.mode === 'overview');
   canvas.style.cursor = a ? 'pointer' : '';
-  if (a && (state.mode === 'overview' || a.floor !== state.floor)) {
-    const list = aptsOnFloor(a.floor);
-    const avail = list.filter((x) => x.status === 'available');
-    const from = avail.length ? `from ${money.format(Math.min(...avail.map((x) => x.price)))}` : 'sold out';
-    tooltip.innerHTML = `<b>Floor ${a.floor}</b><br>${avail.length} of ${list.length} available · ${from}`;
+  const place = () => {
     tooltip.style.left = `${e.clientX + 16}px`;
     tooltip.style.top = `${e.clientY + 12}px`;
     tooltip.style.opacity = 1;
+  };
+  if (a && (state.mode === 'overview' || !isOpen(a))) {
+    const list = aptsOnFloor(a.tower, a.floor);
+    const avail = list.filter((x) => x.status === 'available');
+    const from = avail.length ? `from ${money.format(Math.min(...avail.map((x) => x.price)))}` : 'sold out';
+    tooltip.innerHTML = `<b>${a.towerLabel} · Floor ${a.floor}</b><br>${avail.length} of ${list.length} available · ${from}`;
+    place();
+  } else if (hit?.hotel && state.mode === 'overview') {
+    tooltip.innerHTML = `<b>${hit.hotel.label}</b><br>Hotel · ${hit.hotel.levels} floors`;
+    place();
   } else tooltip.style.opacity = 0;
 });
 canvas.addEventListener('pointerleave', () => {
   tooltip.style.opacity = 0;
-  if (state.mode !== 'walk') setHover(null);
+  if (state.mode !== 'walk') {
+    setHover(null);
+    setHoverHotel(false);
+  }
 });
 canvas.addEventListener('pointerup', (e) => {
   if (state.mode === 'walk' || !down) return;
   const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6;
   down = null;
   if (moved) return;
-  const a = pick(e);
+  const hit = pick(e);
+  if (hit?.hotel && state.mode === 'overview') return toast(`${hit.hotel.label} is the hotel; its rooms are not part of this sale.`);
+  const a = hit?.apt;
   if (!a) return;
   tooltip.style.opacity = 0;
-  if (state.mode === 'overview' || a.floor !== state.floor) selectFloor(a.floor);
+  if (state.mode === 'overview' || !isOpen(a)) selectFloor(a.tower, a.floor);
   else selectApt(a);
 });
 
@@ -530,7 +590,7 @@ renderer.setAnimationLoop(() => {
     controls.autoRotate = state.mode === 'overview' && performance.now() - lastInteraction > 20000;
     if (!tween) controls.update();
     else camera.lookAt(controls.target);
-    updateLabels();
+    if (building) updateLabels();
   }
   renderer.render(scene, camera);
 });

@@ -1,5 +1,5 @@
 // Turns dist/index.html into the page published online (publish/index.html):
-// styles inlined, app code served next to it as assets/app.js.
+// styles inlined, app code served next to it as assets/app.js, the 3D model as models/shahrofar.glb.
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs';
 
 const html = readFileSync('dist/index.html', 'utf8');
@@ -9,7 +9,9 @@ const css = readFileSync(`dist/${cssHref}`, 'utf8');
 const body = html.match(/<body>([\s\S]*)<\/body>/)[1].trim();
 
 mkdirSync('publish/assets', { recursive: true });
+mkdirSync('publish/models', { recursive: true });
 copyFileSync('dist/assets/app.js', 'publish/assets/app.js');
+copyFileSync('dist/models/shahrofar.glb', 'publish/models/shahrofar.glb');
 writeFileSync(
   'publish/index.html',
   `<title>${title}</title>\n<style>${css}</style>\n${body}\n<script type="module" src="assets/app.js"></script>\n`,

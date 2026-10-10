@@ -3,3 +3,5 @@ dist
 publish
 .claude
 .DS_Store
+build
+__pycache__

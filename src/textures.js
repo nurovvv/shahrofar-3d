@@ -59,36 +59,3 @@ export function tileTexture() {
   }
   return finish(c);
 }
-
-// Facade of neighbouring buildings: 1 tile = one window bay (3 m x 3.2 m)
-export function windowTexture() {
-  const c = document.createElement('canvas');
-  c.width = 64;
-  c.height = 64;
-  const g = c.getContext('2d');
-  g.fillStyle = '#ece6da';
-  g.fillRect(0, 0, 64, 64);
-  g.fillStyle = '#5f7486';
-  g.fillRect(12, 14, 40, 34);
-  g.fillStyle = 'rgba(255,255,255,0.18)';
-  g.fillRect(12, 14, 40, 8);
-  return finish(c, 4);
-}
-
-export function signTexture(text) {
-  const c = document.createElement('canvas');
-  c.width = 1024;
-  c.height = 64;
-  const g = c.getContext('2d');
-  g.fillStyle = '#23272d';
-  g.fillRect(0, 0, 1024, 64);
-  g.fillStyle = '#f4ede0';
-  g.font = '600 38px system-ui, -apple-system, Helvetica, Arial, sans-serif';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.letterSpacing = '14px';
-  g.fillText(text, 512, 34);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}

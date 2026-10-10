@@ -44,8 +44,8 @@ export class WalkControls {
     const { spawn } = interior.apt.layout;
     const w = interior.toWorld(spawn.u, spawn.v);
     this.pos.set(w.x, w.z);
-    const { def } = interior.apt;
-    const dx = spawn.du * def.sx, dz = spawn.dv * def.sz;
+    const { eu, ev } = interior.apt.place;
+    const dx = eu.x * spawn.du + ev.x * spawn.dv, dz = eu.z * spawn.du + ev.z * spawn.dv;
     this.yaw = Math.atan2(-dx, -dz);
     this.pitch = -0.08;
     this.target = null;
@@ -205,9 +205,9 @@ export class WalkControls {
 
   // position + view direction in the apartment's local frame, for the mini-map
   localState() {
-    const { def } = this.interior.apt;
+    const { eu, ev } = this.interior.apt.place;
     const l = this.interior.toLocal(this.pos.x, this.pos.y);
     const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
-    return { u: l.u, v: l.v, du: fx * def.sx, dv: fz * def.sz };
+    return { u: l.u, v: l.v, du: fx * eu.x + fz * eu.z, dv: fx * ev.x + fz * ev.z };
   }
 }

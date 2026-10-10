@@ -1,7 +1,7 @@
 // Builds the 3D interior of one apartment from its layout.
-// The group is placed (and mirrored) into the right spot inside the building.
+// The group is placed (and, if needed, mirrored) into the right spot inside its tower.
 import * as THREE from 'three';
-import { CEIL, CORR, floorBase } from './config.js';
+import { CEIL } from './config.js';
 import { woodTexture, tileTexture } from './textures.js';
 
 const DOOR_H = 2.1;
@@ -44,11 +44,13 @@ function material(color, extra = {}) {
  */
 export function buildInterior(apt, { full = true } = {}) {
   const S = getShared();
-  const { def, layout } = apt;
-  const baseY = floorBase(apt.floor);
+  const { place, layout } = apt;
+  const { o, eu, ev, baseY } = place;
   const group = new THREE.Group();
-  group.position.set(def.ox, baseY, def.sz * CORR);
-  group.scale.set(def.sx, 1, def.sz);
+  // local x = u (along the facade), y = up, z = v (corridor -> windows)
+  group.matrixAutoUpdate = false;
+  group.matrix.makeBasis(new THREE.Vector3(eu.x, 0, eu.z), new THREE.Vector3(0, 1, 0), new THREE.Vector3(ev.x, 0, ev.z));
+  group.matrix.setPosition(o.x, baseY, o.z);
 
   const own = []; // geometries to dispose
   const floorMeshes = [];
@@ -150,8 +152,8 @@ export function buildInterior(apt, { full = true } = {}) {
     }
   }
 
-  const toLocal = (x, z) => ({ u: (x - def.ox) * def.sx, v: z * def.sz - CORR });
-  const toWorld = (u, v) => ({ x: def.ox + def.sx * u, z: def.sz * (CORR + v) });
+  const toLocal = (x, z) => ({ u: (x - o.x) * eu.x + (z - o.z) * eu.z, v: (x - o.x) * ev.x + (z - o.z) * ev.z });
+  const toWorld = (u, v) => ({ x: o.x + eu.x * u + ev.x * v, z: o.z + eu.z * u + ev.z * v });
 
   return {
     apt,

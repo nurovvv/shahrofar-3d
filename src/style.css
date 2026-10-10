@@ -39,7 +39,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* floor list */
 #floors { position: fixed; left: 16px; top: 88px; bottom: 76px; width: 168px; padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
 #floors h3 { margin: 4px 6px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
-.floor-btn { display: grid; grid-template-columns: 34px 1fr; align-items: center; gap: 8px; border: 0; background: transparent; padding: 7px 8px; border-radius: 10px; text-align: left; }
+.floor-btn { display: grid; grid-template-columns: 38px 1fr; align-items: center; gap: 8px; border: 0; background: transparent; padding: 7px 8px; border-radius: 10px; text-align: left; }
 .floor-btn:hover { background: rgba(31, 95, 139, 0.08); }
 .floor-btn.active { background: var(--accent); color: var(--accent-ink); }
 .floor-btn .num { font-size: 19px; font-weight: 700; text-align: center; }
@@ -50,6 +50,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .floor-btn.lobby { opacity: 0.55; cursor: default; }
 .floor-btn.lobby:hover { background: transparent; }
 .overview-btn { border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 7px; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.tower-tabs { display: flex; gap: 4px; padding: 3px; background: rgba(29, 33, 40, 0.06); border-radius: 10px; margin-bottom: 6px; }
+.tower-tabs button { flex: 1; border: 0; background: transparent; border-radius: 8px; padding: 6px 4px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.tower-tabs button.on { background: #fff; box-shadow: 0 1px 4px rgba(20, 30, 45, 0.14); }
+.floor-btn .num { white-space: nowrap; }
+
+#loading { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 14px 20px; font-size: 14px; z-index: 20; }
+#loading[hidden] { display: none; }
 
 /* side panel */
 #side { position: fixed; right: 16px; top: calc(16px + env(safe-area-inset-top, 0px)); width: 340px; max-height: calc(100% - 32px); overflow-y: auto; padding: 18px; }
@@ -136,6 +143,7 @@ body.touch #walk-help { display: none; }
   .floor-btn { grid-template-columns: 1fr; text-align: center; min-width: 54px; }
   .floor-btn .meta { display: none; }
   .overview-btn { margin: 0; white-space: nowrap; }
+  .tower-tabs { margin: 0; flex: none; }
   #side { top: auto; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); left: 16px; right: 16px; width: auto; max-height: 46%; padding: 14px; }
   #legend, #hint { display: none; }
   #walk-help { display: none; }
