@@ -9,7 +9,11 @@ import { groundTexture } from './textures.js';
 
 const GLASS = new Set(['Window glass', 'Curtain glass', 'Shop glass', 'Pool water', 'River']);
 
-const GROUND = { Grass: 'grass', Lawn: 'grass', Asphalt: 'asphalt', Paving: 'paving', Sidewalk: 'paving', 'Deck paving': 'deck' };
+const GROUND = {
+  Grass: 'grass', Lawn: 'grass', Asphalt: 'asphalt', Paving: 'paving', Sidewalk: 'paving', 'Deck paving': 'deck',
+  Cobble: 'cobble', 'Deck stone': 'stone', 'Pool mosaic': 'mosaic', 'Copper screen': 'copper', 'Rubber blue': 'rubber',
+  Promenade: 'promenade',
+};
 const groundTex = {};
 
 function tuneMaterial(m) {

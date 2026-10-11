@@ -101,6 +101,8 @@ export function groundTexture(kind) {
       [4000, 0.4, 1.0, ['#6a6b70', '#47484c', '#77787c'], 0.6],
     ]);
     canvas = c; metres = 6;
+  } else if (kind in SURFACES) {
+    ({ canvas, metres } = SURFACES[kind]());
   } else {
     // paving slabs with joints
     const { c, g } = noiseCanvas(256, kind === 'deck' ? '#dcb88f' : '#c8bcab', [[1200, 0.5, 1.2, ['#d4c9b9', '#b9ad9c'], 0.4]]);
@@ -116,3 +118,103 @@ export function groundTexture(kind) {
   tex.repeat.set(1 / metres, 1 / metres);
   return tex;
 }
+
+// Surfaces of the roof deck, shop front and promenade (render 2). Each returns { canvas, metres }.
+function seeded(seed) {
+  return () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+}
+
+function blocks(size, base, joint, rows, cols, stagger, shades, seed) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  const rnd = seeded(seed);
+  g.fillStyle = joint;
+  g.fillRect(0, 0, size, size);
+  const h = size / rows, w = size / cols;
+  for (let r = 0; r < rows; r++) {
+    const off = stagger ? (r % 2) * w * stagger : 0;
+    for (let k = -1; k <= cols; k++) {
+      g.fillStyle = shades[Math.floor(rnd() * shades.length)];
+      g.fillRect(k * w + off + 1.5, r * h + 1.5, w - 3, h - 3);
+      g.globalAlpha = 0.25;
+      g.fillStyle = base;
+      g.fillRect(k * w + off + 1.5 + rnd() * w * 0.3, r * h + 1.5, w * 0.4, h - 3);
+      g.globalAlpha = 1;
+    }
+  }
+  return { c, g, rnd };
+}
+
+const SURFACES = {
+  // grey irregular stone setts
+  cobble() {
+    const size = 256, c = document.createElement('canvas');
+    c.width = c.height = size;
+    const g = c.getContext('2d'), rnd = seeded(17);
+    g.fillStyle = '#7d7a76';
+    g.fillRect(0, 0, size, size);
+    const n = 9;
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        const cx = (i + 0.5 + (rnd() - 0.5) * 0.35) * (size / n), cy = (j + 0.5 + (rnd() - 0.5) * 0.35) * (size / n);
+        const r = (size / n) * (0.42 + rnd() * 0.08);
+        const l = 60 + rnd() * 16;
+        g.fillStyle = `hsl(30, 4%, ${l}%)`;
+        const k = 6 + Math.floor(rnd() * 3);
+        const pts = [];
+        for (let t = 0; t < k; t++) {
+          const a = (t / k) * Math.PI * 2 + rnd() * 0.4, rr = r * (0.8 + rnd() * 0.25);
+          pts.push([Math.cos(a) * rr, Math.sin(a) * rr]);
+        }
+        // draw wrapped copies so the tile repeats without seams
+        for (const [ox, oy] of [[0, 0], [size, 0], [-size, 0], [0, size], [0, -size]]) {
+          g.beginPath();
+          pts.forEach(([px, py], t) => (t ? g.lineTo(cx + ox + px, cy + oy + py) : g.moveTo(cx + ox + px, cy + oy + py)));
+          g.closePath();
+          g.fill();
+        }
+      }
+    }
+    return { canvas: c, metres: 2.2 };
+  },
+  // warm tan large-format stone around the pool
+  stone() {
+    const { c } = blocks(256, '#e2bd92', '#b48d66', 4, 2, 0.5, ['#d9b088', '#d4a97c', '#ddb58c', '#cfa477'], 23);
+    return { canvas: c, metres: 2.4 };
+  },
+  // blue-grey pebble mosaic
+  mosaic() {
+    const { c } = noiseCanvas(128, '#6f8fa3', [[700, 1.5, 3.2, ['#89a7b8', '#5a7a8f', '#9bb4c2', '#4f6d82', '#b5c6cf'], 0.9]]);
+    return { canvas: c, metres: 0.6 };
+  },
+  // perforated copper screen: panels with darker joints and a dot pattern
+  copper() {
+    const size = 256, c = document.createElement('canvas');
+    c.width = c.height = size;
+    const g = c.getContext('2d');
+    g.fillStyle = '#a5643f';
+    g.fillRect(0, 0, size, size);
+    for (let y = 4; y < size; y += 8) {
+      for (let x = 4 + ((y / 8) % 2) * 4; x < size; x += 8) {
+        const k = 0.5 + 0.5 * Math.sin(x * 0.05) * Math.cos(y * 0.04);
+        g.fillStyle = `rgba(60, 28, 14, ${0.35 + 0.35 * k})`;
+        g.beginPath();
+        g.arc(x, y, 1.6 + 1.2 * k, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
+    g.fillStyle = 'rgba(45, 22, 12, 0.85)';
+    g.fillRect(0, 0, 4, size);
+    g.fillRect(0, 0, size, 3);
+    return { canvas: c, metres: 1.5 };
+  },
+  rubber() {
+    const { c } = noiseCanvas(128, '#1f63b0', [[900, 0.6, 1.4, ['#2a73c4', '#18559a', '#3a82cc'], 0.7]]);
+    return { canvas: c, metres: 2 };
+  },
+  promenade() {
+    const { c } = blocks(256, '#ddd5ca', '#b9afa3', 8, 4, 0.5, ['#d8cfc4', '#d2c8bc', '#ddd4c9', '#cec4b8'], 31);
+    return { canvas: c, metres: 1.6 };
+  },
+};
