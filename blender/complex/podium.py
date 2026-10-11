@@ -35,11 +35,13 @@ INNER = [(64.0, 210.0), (52.0, 212.0), (30.0, 216.5), (22.0, 224.0), (24.0, 230.
          (-15.0, 243.0), (-17.0, 241.0), (-52.0, 241.0), (-58.0, 240.0)]
 
 # Two-storey wedge in front of the hotel with a roof terrace (south-east of the hotel): its facade line,
-# re-measured on render 1 (straight west side from the hotel's fin, round tip, east side up to the podium);
-# complex/wedge.py builds it from the exact lines and arcs, this coarse outline is for the neighbours
-HOTEL_WEDGE = [(31.7, 190.0), (50.8, 165.4), (53.3, 163.3), (56.6, 162.6), (59.7, 163.4), (62.2, 165.6), (63.5, 168.7),
-               (69.6, 208.0), (58.0, 209.6), (45.0, 197.0)]
-WEDGE_TOP = 8.4
+# re-measured on render 1 at the terrace height (straight west side from the hotel's fin, round tip, east side
+# clear of the inner east road up to the podium, rounded north-east corner). complex/wedge.py builds it from
+# the exact lines and arcs (wedge.coarse_outline() prints this list); this coarse outline is for the neighbours
+HOTEL_WEDGE = [(31.3, 190.0), (48.8, 165.9), (50.1, 164.8), (52.3, 164.0), (54.7, 163.9), (56.9, 164.6), (58.8, 165.9),
+               (59.9, 167.3), (60.4, 168.4), (71.9, 207.8), (71.8, 208.8), (71.1, 209.5), (70.6, 209.6), (58.0, 209.6),
+               (45.0, 197.0)]
+WEDGE_TOP = 10.2   # the terrace meets the hotel at its first floor over the lobby (6.0 + 4.2)
 SPLIT_X = 22.0     # west of this the podium has the extra level
 
 
@@ -118,9 +120,10 @@ def hotel_wedge(mats, col):
         a2, b2 = np.array(a), np.array(b)
         t = (b2 - a2) / (np.linalg.norm(b2 - a2) + 1e-9)
         n = np.array([t[1], -t[0]])
-        mb.quad_wall(a, b, 0.0, 3.6, 'Shop glass')
-        mb.quad_wall(a, b, 3.6, 4.3, 'White band')
-        mb.quad_wall(tuple(a2 + n * 0.15), tuple(b2 + n * 0.15), 4.3, 7.4, 'Terracotta')
+        # heights follow WEDGE_TOP so the plain wing closes up to its roof slab
+        mb.quad_wall(a, b, 0.0, WEDGE_TOP - 4.8, 'Shop glass')
+        mb.quad_wall(a, b, WEDGE_TOP - 4.8, WEDGE_TOP - 4.1, 'White band')
+        mb.quad_wall(tuple(a2 + n * 0.15), tuple(b2 + n * 0.15), WEDGE_TOP - 4.1, WEDGE_TOP - 1.0, 'Terracotta')
     mb.prism(w.buffer(0.5), WEDGE_TOP - 1.0, WEDGE_TOP + 0.2, 'White band', None, 'White band')
     mb.polygon_face(w.buffer(-0.3), WEDGE_TOP + 0.21, 'Deck paving')
     deck_rail(mb, w.buffer(0.3), WEDGE_TOP + 0.2)

@@ -166,11 +166,20 @@ def parking(mb):
         mb.prism(LineString([tuple(p), tuple(q)]).buffer(0.08), 0.04, 0.06, 'Road line', 'Road line')
 
 
+def _wing_built():
+    """True when complex/wedge.py has built the hotel's terrace wing (it has its own beds round it)."""
+    try:
+        from . import wedge
+        return bool(getattr(wedge, 'BUILT', False))
+    except Exception:
+        return False
+
+
 def lawns_and_beds(mb):
     beds = [Polygon([(-40, 236), (-30, 233), (-28, 240), (-38, 242)]),
-            Point(36, 158).buffer(5.0),
-            Polygon([(30, 168), (40, 162), (46, 168), (36, 175)]),
             Point(-48, 230).buffer(3.5)]
+    if not _wing_built():  # the wing builds the beds by the hotel itself (this round one stood on the front road)
+        beds += [Point(36, 158).buffer(5.0), Polygon([(30, 168), (40, 162), (46, 168), (36, 175)])]
     for g in beds:
         mb.prism(g, 0.1, 0.35, 'Kerb', 'Lawn')
 
@@ -406,9 +415,9 @@ def cars(mats, col, rnd):
 def street_furniture(mats, col, rnd, road_polys):
     """Lamp posts along the local roads, benches on the plaza, and where people stand."""
     mb = MeshBuilder()
-    try:  # no lamp post under the hotel's terrace wing (it overhangs the inner east road's sidewalk)
+    try:  # no lamp post under or against the hotel's terrace wing (it overhangs the inner east road's sidewalk)
         from .podium import HOTEL_WEDGE
-        wing = Polygon(HOTEL_WEDGE).buffer(1.0)
+        wing = Polygon(HOTEL_WEDGE).buffer(1.6)
     except Exception:
         wing = Polygon()
     for pts, w in ROADS[1:7]:
@@ -432,6 +441,9 @@ def street_furniture(mats, col, rnd, road_polys):
     # benches around the plaza, facing out
     for (x, y, r) in [(-50, 236, 0.6), (-34, 244, 0.2), (36, 214, 1.4), (70, 230, 1.6), (68, 180, 1.3), (-64, 250, 1.57),
                       (30, 290, 3.0), (-10, 298, 3.1), (-40, 296, 3.2)]:
+        if wing.buffer(0.4).contains(Point(x, y)) or \
+                (wing.buffer(8.0).contains(Point(x, y)) and any(r_.contains(Point(x, y)) for r_ in road_polys)):
+            continue   # not under the terrace wing or on the road beside it
         mb.box(x, y, 0.1, 1.8, 0.5, 0.45, 'Wood', rot=r)
         mb.box(x - math.sin(r) * 0.22, y + math.cos(r) * 0.22, 0.55, 1.8, 0.08, 0.45, 'Wood', rot=r)
     make_object('Street furniture', mb.to_mesh('Street furniture', mats), col)
@@ -449,6 +461,12 @@ def street_furniture(mats, col, rnd, road_polys):
     spots += rnd.sample(east, min(34, len(east))) + rnd.sample(west, min(14, len(west)))
     for x, y, z in spots:
         PEOPLE.append([round(x, 2), round(y, 2), z, rnd.randrange(6)])
+    try:  # a few people on the hotel's terrace wing (complex/wedge.py picks their spots on the stone)
+        if _wing_built():
+            from .wedge import TERRACE_PEOPLE
+            PEOPLE.extend([round(x, 2), round(y, 2), round(z, 2), int(k)] for x, y, z, k in TERRACE_PEOPLE)
+    except Exception:
+        pass
     pcol = get_collection('People', col)
     mb = MeshBuilder()
     clothes = ['Car red', 'Car dark', 'Play blue', 'Wood', 'Lounger', 'Play orange']

@@ -80,6 +80,7 @@ SPECS = {
     'Cobble joint': ('#8e8a86', 0.9, 0.0, {}),    # mid-grey joints between the playground cobbles
     'Shop window': ('#c8d0cc', 0.12, 0.0, {'specular': 0.4}),   # light grey-green shop glazing (ground floor)
     'Sign blue': ('#3d8fe8', 0.4, 0.0, {'emission': ('#3a8cff', 0.5)}),   # LC Waikiki logo on the copper band
+    'Railing glass dark': ('#3c5463', 0.05, 0.0, {'alpha': 0.7, 'specular': 0.8}),   # tinted balustrade of the hotel's terrace wing
 }
 
 

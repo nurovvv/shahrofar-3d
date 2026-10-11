@@ -193,18 +193,18 @@ const SURFACES = {
     const size = 256, c = document.createElement('canvas');
     c.width = c.height = size;
     const g = c.getContext('2d');
-    g.fillStyle = '#a5643f';
+    g.fillStyle = '#d2a08a'; // light pinkish copper sheet, as on the renders
     g.fillRect(0, 0, size, size);
     for (let y = 4; y < size; y += 8) {
       for (let x = 4 + ((y / 8) % 2) * 4; x < size; x += 8) {
         const k = 0.5 + 0.5 * Math.sin(x * 0.05) * Math.cos(y * 0.04);
-        g.fillStyle = `rgba(60, 28, 14, ${0.35 + 0.35 * k})`;
+        g.fillStyle = `rgba(110, 60, 40, ${0.25 + 0.3 * k})`;
         g.beginPath();
         g.arc(x, y, 1.6 + 1.2 * k, 0, Math.PI * 2);
         g.fill();
       }
     }
-    g.fillStyle = 'rgba(45, 22, 12, 0.85)';
+    g.fillStyle = 'rgba(90, 50, 34, 0.8)';
     g.fillRect(0, 0, 4, size);
     g.fillRect(0, 0, size, 3);
     return { canvas: c, metres: 1.5 };
