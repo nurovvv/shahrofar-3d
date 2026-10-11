@@ -51,16 +51,19 @@ def build_podium(mats, root_col):
     mb = MeshBuilder()
     ring = simplify_ring(ring_coords(poly), tol=0.001)
     signs = []
+    try:  # detailed shop front (perforated copper band, logos) when available
+        from .facade import shop_front as front
+    except Exception:
+        front = shop_front
     for a, b in zip(ring, ring[1:] + ring[:1]):
         if is_outer(a, b):
-            shop_front(mb, a, b, signs)
+            front(mb, a, b, signs)
         else:
             land_side(mb, a, b, 0.0, DECK_E)
     # floors / deck slabs
     mb.prism(poly, DECK_E - 0.6, DECK_E, 'White band', 'Paving', None)
     mb.prism(poly.buffer(0.6, join_style='mitre').difference(poly.buffer(-0.01)), GF_TOP - 0.5, GF_TOP + 0.2, 'White band', 'White band', 'White band')
     mb.prism(poly.buffer(0.35, join_style='mitre').difference(poly.buffer(-0.01)), L2_TOP - 0.3, L2_TOP + 0.3, 'White band', 'White band', 'White band')
-    deck_rail(mb, poly, DECK_E, exclude=ww)
 
     # west wing extra level
     wr = simplify_ring(ring_coords(ww), tol=0.001)
@@ -71,7 +74,6 @@ def build_podium(mats, root_col):
             land_side(mb, a, b, DECK_E, DECK_W)
     mb.prism(ww, DECK_W - 0.6, DECK_W, 'White band', 'Paving', None)
     mb.prism(ww.buffer(0.4, join_style='mitre').difference(ww.buffer(-0.01)), DECK_W - 0.6, DECK_W + 0.25, 'White band', 'White band', 'White band')
-    deck_rail(mb, ww, DECK_W)
     ob = make_object('Podium', mb.to_mesh('Podium', mats), col)
 
     # brand signs as real text on the copper band
@@ -222,40 +224,12 @@ def gazebo(mb, x, y, z, r=2.6, h=3.0):
 
 
 def build_decks(mats, col, poly, ww):
+    """Roof decks: zones and parts in complex/deck/ (pool, playground, planters, parapet and rails)."""
+    from . import deck
     mb = MeshBuilder()
-    # --- pool deck in front of the hotel -------------------------------------
-    zE = DECK_E
-    pool_poly = Polygon([(-7.0, -3.4), (7.0, -3.4), (7.0, 3.4), (-7.0, 3.4)]).buffer(1.0, join_style='round').buffer(-1.0)
-    from shapely import affinity
-    pool_poly = affinity.translate(affinity.rotate(pool_poly, 28, origin=(0, 0)), 45.0, 247.0)
-    deck = pool_poly.buffer(5.0, join_style='mitre')
-    mb.prism(deck.intersection(poly.buffer(-1.0)), zE, zE + 0.08, 'Deck paving', 'Deck paving')
-    mb.prism(pool_poly.buffer(0.4).difference(pool_poly), zE, zE + 0.3, 'White band', 'White band')
-    mb.polygon_face(pool_poly, zE + 0.15, 'Pool water')
-    for k in range(5):
-        x, y = 35.0 + k * 2.4, 238.5 - k * 0.9
-        mb.box(x, y, zE + 0.08, 0.7, 1.9, 0.35, 'Wood', rot=math.radians(28))
-    for (x, y) in [(36.0, 254.0), (54.0, 240.0), (30.0, 245.0)]:
-        mb.box(x, y, zE + 0.08, 0.1, 0.1, 2.4, 'Metal')
-        mb.prism(Point(x, y).buffer(1.6, quad_segs=2), zE + 2.4, zE + 2.6, 'Wood', 'Wood', 'Wood')
-    # garden strip with hedges and gazebos between the hotel and block B
-    for (x, y) in [(28.0, 268.0), (14.0, 280.0)]:
-        gazebo(mb, x, y, zE)
-    hedge = LineString([(56.0, 260.0), (40.0, 272.0), (24.0, 280.0), (8.0, 286.0)])
-    mb.prism(hedge.buffer(0.6), zE, zE + 1.0, 'Shrub', 'Shrub')
-    for (x, y, h) in [(50.0, 264.0, 6.0), (34.0, 276.0, 7.0), (20.0, 285.0, 6.0), (60.0, 250.0, 5.0), (40.0, 258.0, 5.5),
-                      (24.0, 262.0, 6.5), (58.0, 232.0, 5.0)]:
-        if poly.buffer(-1.5).contains(Point(x, y)):
-            tree(mb, x, y, zE, h, 2.0, light=(x > 40))
-    # --- playground deck between blocks B and V: grey paving, red play kit, lattice dome, trees
-    zW = DECK_W
-    gazebo(mb, -3.0, 254.0, zW, r=2.3, h=2.6)
-    for (x, y) in [(-12.0, 266.0), (-2.0, 270.0), (-14.0, 256.0)]:
-        mb.box(x, y, zW, 0.9, 0.9, 1.8, 'Play orange')
-        mb.box(x, y, zW + 1.8, 1.5, 1.5, 0.15, 'Play orange')
-        mb.box(x + 1.0, y, zW, 0.12, 0.12, 2.2, 'Metal')
-    for (x, y, h) in [(-16.0, 272.0, 5.0), (6.0, 272.0, 5.5), (-9.0, 250.0, 4.5), (8.0, 262.0, 5.0), (-22.0, 262.0, 5.0),
-                      (-6.0, 262.0, 4.0)]:
-        if ww.buffer(-1.0).contains(Point(x, y)):
-            tree(mb, x, y, zW, h, 1.7)
+    ctx = deck.make_context(poly, LineString(OUTER), ww, DECK_E, DECK_W, SPLIT_X)
+    built = deck.build_all(mb, ctx)
+    if 'edge' not in built:  # plain glass rails when the parapet part is missing
+        deck_rail(mb, poly, DECK_E, exclude=ww)
+        deck_rail(mb, ww, DECK_W)
     make_object('Podium decks', mb.to_mesh('Podium decks', mats), col)

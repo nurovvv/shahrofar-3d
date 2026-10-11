@@ -77,6 +77,13 @@ def build_site(mats, col):
     trees(mats, col, rnd, roads)
     cars(mats, col, rnd)
     street_furniture(mats, col, rnd, road_polys)
+    try:  # promenade in front of the shop front, ground playground details
+        from . import street
+        street.build(mats, col, rnd, roads)
+    except Exception:
+        import traceback
+        print('[site] street: skipped')
+        traceback.print_exc()
 
 
 def river(mb, rnd):

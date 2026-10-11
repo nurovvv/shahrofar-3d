@@ -82,6 +82,10 @@ def parse_args():
     p.add_argument('--no-glb', action='store_true')
     p.add_argument('--no-site', action='store_true')
     p.add_argument('--view', default='reference', help='reference | ' + ' | '.join(EXTRA_VIEWS))
+    p.add_argument('--cam', help='custom camera location x,y,z (site metres); with --target and --lens')
+    p.add_argument('--target', help='custom camera target x,y,z')
+    p.add_argument('--lens', type=float, default=30.0)
+    p.add_argument('--res', help='render size WxH before --scale, e.g. 2000x1413')
     return p.parse_args(argv)
 
 
@@ -113,6 +117,8 @@ EXTRA_VIEWS = {
     'river street': dict(location=(-8.0, 470.0, 6.0), target=(-5.0, 250.0, 34.0), lens=30.0),
     'river aerial': dict(location=(150.0, 420.0, 190.0), target=(5.0, 240.0, 20.0), lens=34.0),
     'avenue street': dict(location=(150.0, 330.0, 8.0), target=(10.0, 255.0, 34.0), lens=28.0),
+    # the pool deck between the hotel and block B, from above the river road (render 2)
+    'deck': dict(location=(86.0, 300.0, 68.0), target=(36.0, 236.0, 14.0), lens=30.0),
 }
 
 
@@ -222,6 +228,12 @@ def main():
                                   export_cameras=False, export_lights=False, export_extras=True)
     if args.render:
         scene.camera = views.get(args.view, ref_cam)
+        if args.cam:
+            loc = tuple(map(float, args.cam.split(',')))
+            tgt = tuple(map(float, (args.target or '0,240,15').split(',')))
+            scene.camera = add_view(scene, 'Custom', loc, tgt, args.lens)
+        if args.res:
+            scene.render.resolution_x, scene.render.resolution_y = map(int, args.res.lower().split('x'))
         scene.render.filepath = os.path.abspath(args.render)
         bpy.ops.render.render(write_still=True)
 

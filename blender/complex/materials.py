@@ -57,6 +57,23 @@ SPECS = {
     'Car': ('#d8dade', 0.3, 0.5, {}),
     'Car dark': ('#2a2e33', 0.3, 0.5, {}),
     'Car red': ('#b02a2a', 0.3, 0.5, {}),
+    # roof deck and promenade (render 2)
+    'Cobble': ('#a9a7a3', 0.9, 0.0, {}),          # grey irregular stone paving
+    'Deck stone': ('#d4a97c', 0.85, 0.0, {}),     # warm tan large-format stone around the pool
+    'Pool mosaic': ('#6f8fa3', 0.4, 0.0, {}),     # blue-grey pebble mosaic pool surround
+    'Pool tile': ('#8fd6ec', 0.2, 0.0, {}),       # light blue pool walls / floor
+    'Lamp white': ('#f2f1ec', 0.35, 0.1, {}),
+    'Lamp glow': ('#fff6dd', 0.4, 0.0, {'emission': ('#fff3d6', 1.5)}),
+    'Umbrella': ('#9c6f47', 0.8, 0.0, {}),        # square brown sail umbrellas
+    'Lounger': ('#e9e3d8', 0.6, 0.0, {}),
+    'Lattice wood': ('#c8a77e', 0.7, 0.0, {}),    # light timber geodesic pergolas, decks
+    'Dark lattice': ('#5b3a2c', 0.7, 0.0, {}),    # dark brown climbing dome
+    'Rubber blue': ('#1f63b0', 0.95, 0.0, {}),    # play surface
+    'Fitness green': ('#4f9a35', 0.5, 0.3, {}),
+    'Fitness yellow': ('#e0bd35', 0.5, 0.3, {}),
+    'Planter': ('#d7d2c8', 0.8, 0.0, {}),         # light concrete planter walls
+    'Bollard': ('#f1f0eb', 0.5, 0.0, {}),
+    'Promenade': ('#d6cdc2', 0.85, 0.0, {}),      # light street paving
 }
 
 
