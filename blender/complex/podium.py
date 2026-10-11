@@ -34,8 +34,11 @@ OUTER = _chaikin([(-61.0, 240.0), (-63.0, 252.0), (-60.5, 266.0), (-53.0, 279.0)
 INNER = [(64.0, 210.0), (52.0, 212.0), (30.0, 216.5), (22.0, 224.0), (24.0, 230.0), (14.0, 236.0), (4.5, 242.5),
          (-15.0, 243.0), (-17.0, 241.0), (-52.0, 241.0), (-58.0, 240.0)]
 
-# Two-storey wedge in front of the hotel with a roof terrace (south-east of the hotel)
-HOTEL_WEDGE = [(33.0, 188.5), (55.0, 160.0), (61.0, 161.0), (63.5, 167.0), (72.0, 201.0), (52.0, 206.0)]
+# Two-storey wedge in front of the hotel with a roof terrace (south-east of the hotel): its facade line,
+# re-measured on render 1 (straight west side from the hotel's fin, round tip, east side up to the podium);
+# complex/wedge.py builds it from the exact lines and arcs, this coarse outline is for the neighbours
+HOTEL_WEDGE = [(31.7, 190.0), (50.8, 165.4), (53.3, 163.3), (56.6, 162.6), (59.7, 163.4), (62.2, 165.6), (63.5, 168.7),
+               (69.6, 208.0), (58.0, 209.6), (45.0, 197.0)]
 WEDGE_TOP = 8.4
 SPLIT_X = 22.0     # west of this the podium has the extra level
 
@@ -97,6 +100,17 @@ def build_podium(mats, root_col):
 
 
 def hotel_wedge(mats, col):
+    """Terrace wing in front of the hotel: the detailed wing of complex/wedge.py (copper band, coping
+    and glass balustrade, stone terrace, planting), or the plain block below if that is not available."""
+    try:
+        from .wedge import build_wedge
+        return build_wedge(mats, col)
+    except Exception:
+        import traceback
+        print('[podium] hotel wedge: detailed wing failed, using the plain one')
+        traceback.print_exc()
+        for ob in [o for o in col.objects if o.name.startswith('Hotel terrace wing')]:
+            bpy.data.objects.remove(ob)
     mb = MeshBuilder()
     w = Polygon(HOTEL_WEDGE).buffer(-3.0).buffer(3.0)
     ring = simplify_ring(ring_coords(w), tol=0.001)

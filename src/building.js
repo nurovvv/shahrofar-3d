@@ -31,7 +31,7 @@ function tuneMaterial(m) {
     m.roughness = Math.max(0.06, Math.min(m.roughness, 0.12));
   }
   if (m.name.startsWith('Stained')) m.emissiveIntensity = 0.25;
-  if (m.name === 'Railing glass' || m.name === 'Neighbour') {
+  if (m.name === 'Railing glass' || m.name === 'Railing glass dark' || m.name === 'Neighbour') {
     m.transparent = true;
     m.depthWrite = false;
     m.side = THREE.DoubleSide;

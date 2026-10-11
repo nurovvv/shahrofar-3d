@@ -406,6 +406,11 @@ def cars(mats, col, rnd):
 def street_furniture(mats, col, rnd, road_polys):
     """Lamp posts along the local roads, benches on the plaza, and where people stand."""
     mb = MeshBuilder()
+    try:  # no lamp post under the hotel's terrace wing (it overhangs the inner east road's sidewalk)
+        from .podium import HOTEL_WEDGE
+        wing = Polygon(HOTEL_WEDGE).buffer(1.0)
+    except Exception:
+        wing = Polygon()
     for pts, w in ROADS[1:7]:
         line = LineString(pts)
         for side in (-1, 1):
@@ -415,6 +420,9 @@ def street_furniture(mats, col, rnd, road_polys):
             d = 12.0
             while d < off.length:
                 p = off.interpolate(d)
+                if wing.contains(p):
+                    d += 26.0
+                    continue
                 q = line.interpolate(line.project(p))
                 ang = math.atan2(q.y - p.y, q.x - p.x)
                 mb.box(p.x, p.y, 0.1, 0.14, 0.14, 7.5, 'Metal')
