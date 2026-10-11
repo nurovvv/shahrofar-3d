@@ -373,7 +373,8 @@ def pavilion(mb, x, y, z, mat='Dark lattice'):
 
 
 def play_tower(mb, x, y, rot, z):
-    """Timber play tower: four posts, a deck at 1.4 m, rails, a little pitched roof and a slide."""
+    """Timber play tower: four posts, a boarded den under a deck at 1.4 m, boarded sides and rails,
+    a checkered pitched roof and a slide, all in dark red timber as on the render."""
     from .deck.common import rod
     c, s = math.cos(rot), math.sin(rot)
     L = lambda u, v: (x + c * u - s * v, y + s * u + c * v)
@@ -395,8 +396,24 @@ def play_tower(mb, x, y, rot, z):
     m0, m1 = L(-e, 0), L(e, 0)
     for quad in ([(*a0, z + h_post), (*a1, z + h_post), (*m1, ridge), (*m0, ridge)],
                  [(*b0, z + h_post), (*b1, z + h_post), (*m0, ridge), (*m1, ridge)]):
-        mb.face(quad, 'Planter')
-        mb.face(quad[::-1], 'Planter')
+        Q = [np.array(q) for q in quad]
+        n = 3                                   # checkered roof (light / dark shingles), as on the render
+        for i in range(n):
+            for j in range(n):
+                def at(fu, fv):
+                    lo = Q[0] + (Q[1] - Q[0]) * fu
+                    hi = Q[3] + (Q[2] - Q[3]) * fu
+                    return tuple(lo + (hi - lo) * fv)
+                cell = [at(i / n, j / n), at((i + 1) / n, j / n), at((i + 1) / n, (j + 1) / n), at(i / n, (j + 1) / n)]
+                mat = 'Lounger' if (i + j) % 2 == 0 else 'Dark lattice'
+                mb.face(cell, mat)
+                mb.face(cell[::-1], mat)
+    # boarded den under the deck and boarded sides on the deck (dark red timber)
+    for v in (-half, half):
+        for z0, z1 in ((0.0, h_deck), (h_deck + 0.1, h_deck + 0.85)):
+            w = [(*L(-half, v), z + z0), (*L(half, v), z + z0), (*L(half, v), z + z1), (*L(-half, v), z + z1)]
+            mb.face(w, 'Terracotta dark')
+            mb.face(w[::-1], 'Terracotta dark')
     # ladder on the -u side
     for v in (-0.3, 0.3):
         rod(mb, (*L(-half - 0.45, v), z), (*L(-half, v), z + h_deck), 0.03, 'Wood', sides=4)
@@ -412,12 +429,12 @@ def play_tower(mb, x, y, rot, z):
         pts.append((half + run * f, max(hh, 0.18) if k == 6 else hh))
     for (u0, h0), (u1, h1) in zip(pts[:-1], pts[1:]):
         p = [(*L(u0, -0.3), z + h0), (*L(u1, -0.3), z + h1), (*L(u1, 0.3), z + h1), (*L(u0, 0.3), z + h0)]
-        mb.face(p[::-1], 'Play orange')
-        mb.face(p, 'Play orange')
+        mb.face(p[::-1], 'Terracotta dark')
+        mb.face(p, 'Terracotta dark')
         for v in (-0.32, 0.32):
             w = [(*L(u0, v), z + h0), (*L(u1, v), z + h1), (*L(u1, v), z + h1 + 0.22), (*L(u0, v), z + h0 + 0.22)]
-            mb.face(w, 'Play orange')
-            mb.face(w[::-1], 'Play orange')
+            mb.face(w, 'Terracotta dark')
+            mb.face(w[::-1], 'Terracotta dark')
     rod(mb, (*L(pts[-1][0] - 0.2, 0), z), (*L(pts[-1][0] - 0.2, 0), z + pts[-1][1]), 0.04, 'Metal', sides=4)
 
 

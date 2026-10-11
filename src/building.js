@@ -7,7 +7,7 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { MODEL_URL, toScene, towerByKey } from './config.js';
 import { groundTexture } from './textures.js';
 
-const GLASS = new Set(['Window glass', 'Curtain glass', 'Shop glass', 'Pool water', 'River']);
+const GLASS = new Set(['Window glass', 'Curtain glass', 'Shop glass', 'Shop window', 'Gallery glass', 'Pool water', 'River']);
 
 const GROUND = {
   Grass: 'grass', Lawn: 'grass', Asphalt: 'asphalt', Paving: 'paving', Sidewalk: 'paving', 'Deck paving': 'deck',
@@ -26,7 +26,7 @@ function tuneMaterial(m) {
   }
   if (GLASS.has(m.name)) {
     // lighter glass that picks up the sky
-    if (m.name !== 'River' && m.name !== 'Pool water') m.color.offsetHSL(0, -0.05, 0.12);
+    if (!['River', 'Pool water', 'Shop window', 'Gallery glass'].includes(m.name)) m.color.offsetHSL(0, -0.05, 0.12);
     m.envMapIntensity = 1.2;
     m.roughness = Math.max(0.06, Math.min(m.roughness, 0.12));
   }

@@ -12,7 +12,6 @@ Each module has build(mb, ctx); a module that is missing or fails is skipped, so
 builds while one part is being worked on.
 """
 import importlib
-import math
 import random
 import traceback
 
@@ -100,3 +99,35 @@ def build_all(mb, ctx):
             print(f'[deck] {name}: failed')
             traceback.print_exc()
     return built
+
+
+# Free spots on the decks where people can stand (filled by find_people_spots, used by site.py).
+PEOPLE_SPOTS = []
+
+
+def find_people_spots(mb, ctx, cell=0.6):
+    """Cells of the deck zones not taken by anything built there (props, planters, the pool recess)."""
+    import numpy as np
+    PEOPLE_SPOTS.clear()
+    for z, zones in ((ctx['z'], [ctx['pool'], ctx['play'], ctx['edge_band']]), (ctx['west']['z'], [ctx['west']['play']])):
+        area = unary_union(zones)
+        x0, y0, x1, y1 = area.bounds
+        nx, ny = int((x1 - x0) / cell) + 1, int((y1 - y0) / cell) + 1
+        taken = np.zeros((ny, nx), bool)
+        V = np.array(mb.verts)
+        for f in mb.faces:
+            P = V[f]
+            zs = P[:, 2]
+            if not ((zs.max() > z + 0.12 and zs.min() < z + 2.5) or zs.min() < z - 0.05):
+                continue
+            if zs.max() < z - 3 or zs.min() > z + 3:
+                continue  # another level
+            i0, i1 = int((P[:, 1].min() - y0) / cell), int((P[:, 1].max() - y0) / cell)
+            j0, j1 = int((P[:, 0].min() - x0) / cell), int((P[:, 0].max() - x0) / cell)
+            taken[max(0, i0 - 1):min(ny, i1 + 2), max(0, j0 - 1):min(nx, j1 + 2)] = True
+        for i in range(ny):
+            for j in range(nx):
+                x, y = x0 + (j + 0.5) * cell, y0 + (i + 0.5) * cell
+                if not taken[i, j] and area.buffer(-0.8).contains(Point(x, y)):
+                    PEOPLE_SPOTS.append((round(x, 2), round(y, 2), z + 0.06))
+    print(f'[deck] {len(PEOPLE_SPOTS)} free spots for people')

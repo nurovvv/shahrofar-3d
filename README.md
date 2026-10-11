@@ -4,6 +4,8 @@ Interactive 3D model of the Shahrofar riverside complex (three towers on a curve
 
 ![The model rendered in Blender from the camera of the aerial marketing render](docs/aerial.jpg)
 
+![The podium roof deck: pool, planted strip and playground](docs/deck.jpg)
+
 Built with [Three.js](https://threejs.org) and [Vite](https://vitejs.dev).
 
 ## Where things come from
@@ -13,6 +15,7 @@ Built with [Three.js](https://threejs.org) and [Vite](https://vitejs.dev).
 | Apartments, rooms, walls, windows, balconies of blocks В and Б | the architect's floor plans: typical floor (sheet 7), floors 23–24 (sheet 8) |
 | Floor levels | section 1-1 (sheet 13): floor 5 at +18.6, then 3.3 m per floor; roofs at +84.9 (В) and +71.7 (Б) |
 | Look, site, podium, hotel, surroundings | the aerial marketing render (its camera was recovered from its vanishing points) |
+| Podium roof deck, shop front, promenade | the deck marketing render: pool area, planted strip, playground with lattice pergolas, perforated copper band (`blender/complex/deck/`, `facade.py`, `street.py`) |
 | Prices and sold/reserved statuses | demo values in `src/data.js` |
 
 | | Floors | Apartments |

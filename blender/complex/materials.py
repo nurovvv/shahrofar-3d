@@ -78,7 +78,7 @@ SPECS = {
     'Gallery glass': ('#eef1f0', 0.12, 0.0, {'specular': 0.5}),   # light glazing of the shop front's 2nd level
     'Umbrella sand': ('#c88b51', 0.8, 0.0, {}),   # light ochre canvas of the pool's sail umbrellas (renders ~#d9a067 sunlit)
     'Cobble joint': ('#8e8a86', 0.9, 0.0, {}),    # mid-grey joints between the playground cobbles
-    'Shop window': ('#bcc6c2', 0.12, 0.0, {'specular': 0.4}),   # light grey-green shop glazing (ground floor)
+    'Shop window': ('#c8d0cc', 0.12, 0.0, {'specular': 0.4}),   # light grey-green shop glazing (ground floor)
     'Sign blue': ('#3d8fe8', 0.4, 0.0, {'emission': ('#3a8cff', 0.5)}),   # LC Waikiki logo on the copper band
 }
 

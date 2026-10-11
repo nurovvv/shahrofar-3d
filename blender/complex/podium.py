@@ -16,9 +16,21 @@ L2_TOP = 10.5      # glass gallery
 DECK_E = 15.0      # copper band level, pool deck
 DECK_W = 20.5      # west wing extra level, playground deck
 
-# Outline of the podium (site metres). Outer edge = the long shop front along the river road.
-OUTER = [(-61.0, 240.0), (-63.0, 252.0), (-60.5, 266.0), (-53.0, 279.0), (-40.0, 288.0), (-20.0, 292.5), (0.0, 293.5),
-         (20.0, 291.5), (38.0, 285.0), (53.0, 274.0), (63.0, 260.0), (68.5, 244.0), (69.5, 229.0), (66.0, 216.0)]
+def _chaikin(pts, rounds):
+    """Corner-cutting smoothing that keeps both ends: each segment a->b becomes 0.75a+0.25b, 0.25a+0.75b."""
+    for _ in range(rounds):
+        out = [pts[0]]
+        for (ax, ay), (bx, by) in zip(pts[:-1], pts[1:]):
+            out += [(0.75 * ax + 0.25 * bx, 0.75 * ay + 0.25 * by), (0.25 * ax + 0.75 * bx, 0.25 * ay + 0.75 * by)]
+        out.append(pts[-1])
+        pts = out
+    return pts
+
+
+# Outline of the podium (site metres). Outer edge = the long shop front along the river road,
+# smoothed so the shop front, parapet and promenade curve evenly instead of kinking at each point.
+OUTER = _chaikin([(-61.0, 240.0), (-63.0, 252.0), (-60.5, 266.0), (-53.0, 279.0), (-40.0, 288.0), (-20.0, 292.5), (0.0, 293.5),
+                  (20.0, 291.5), (38.0, 285.0), (53.0, 274.0), (63.0, 260.0), (68.5, 244.0), (69.5, 229.0), (66.0, 216.0)], 2)
 INNER = [(64.0, 210.0), (52.0, 212.0), (30.0, 216.5), (22.0, 224.0), (24.0, 230.0), (14.0, 236.0), (4.5, 242.5),
          (-15.0, 243.0), (-17.0, 241.0), (-52.0, 241.0), (-58.0, 240.0)]
 
@@ -232,4 +244,5 @@ def build_decks(mats, col, poly, ww):
     if 'edge' not in built:  # plain glass rails when the parapet part is missing
         deck_rail(mb, poly, DECK_E, exclude=ww)
         deck_rail(mb, ww, DECK_W)
+    deck.find_people_spots(mb, ctx)
     make_object('Podium decks', mb.to_mesh('Podium decks', mats), col)

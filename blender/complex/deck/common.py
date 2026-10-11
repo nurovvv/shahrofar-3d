@@ -4,7 +4,7 @@ and lamps across all parts. Everything is in site metres; z is the surface the p
 import math
 
 import numpy as np
-from shapely.geometry import LineString, Point, Polygon
+from shapely.geometry import Point, Polygon
 
 PAVE_T = 0.06  # zone paving sits this much above the podium slab
 

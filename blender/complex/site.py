@@ -435,15 +435,21 @@ def street_furniture(mats, col, rnd, road_polys):
         x, y = rnd.uniform(-80, 110), rnd.uniform(140, 335)
         if walk.contains(Point(x, y)) or rnd.random() < 0.08:
             spots.append((x, y, 0.12))
-    for _ in range(18):
-        spots.append((rnd.uniform(28, 62), rnd.uniform(232, 268), 15.0))
-    for _ in range(10):
-        spots.append((rnd.uniform(-16, 8), rnd.uniform(250, 272), 20.5))
+    from .deck import PEOPLE_SPOTS  # free paving on the roof decks (found after the decks are built)
+    east = [p for p in PEOPLE_SPOTS if p[2] < 18]
+    west = [p for p in PEOPLE_SPOTS if p[2] >= 18]
+    spots += rnd.sample(east, min(34, len(east))) + rnd.sample(west, min(14, len(west)))
     for x, y, z in spots:
         PEOPLE.append([round(x, 2), round(y, 2), z, rnd.randrange(6)])
     pcol = get_collection('People', col)
     mb = MeshBuilder()
+    clothes = ['Car red', 'Car dark', 'Play blue', 'Wood', 'Lounger', 'Play orange']
     for x, y, z, k in PEOPLE:
-        mb.prism(Point(x, y).buffer(0.2, quad_segs=3), z, z + 1.45, ['Car red', 'Car dark', 'Play blue', 'Wood', 'Sign', 'Play orange'][k], 'Car dark')
-        mb.blob(x, y, z + 1.6, 0.13, 0.13, 0.15, 'Wood', subdiv=1)
+        a = rnd.uniform(0, math.pi)
+        c, s_ = math.cos(a), math.sin(a)
+        for side in (-1, 1):  # legs
+            mb.box(x + c * side * 0.09, y + s_ * side * 0.09, z, 0.13, 0.15, 0.82, 'Car dark', rot=a)
+        mb.box(x, y, z + 0.8, 0.42, 0.24, 0.62, clothes[k], rot=a)        # torso
+        mb.box(x, y, z + 0.88, 0.5, 0.12, 0.5, clothes[k], rot=a)         # arms
+        mb.blob(x, y, z + 1.6, 0.12, 0.12, 0.14, 'Wood', subdiv=1)        # head
     make_object('People', mb.to_mesh('People', mats), pcol)
