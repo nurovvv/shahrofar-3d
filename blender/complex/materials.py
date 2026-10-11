@@ -74,6 +74,10 @@ SPECS = {
     'Planter': ('#d7d2c8', 0.8, 0.0, {}),         # light concrete planter walls
     'Bollard': ('#f1f0eb', 0.5, 0.0, {}),
     'Promenade': ('#d6cdc2', 0.85, 0.0, {}),      # light street paving
+    'Shop frame': ('#2c3034', 0.4, 0.5, {}),      # dark mullions / transoms of the shop front
+    'Gallery glass': ('#dde3e1', 0.12, 0.0, {'specular': 0.5}),   # light glazing of the shop front's 2nd level
+    'Umbrella sand': ('#c88b51', 0.8, 0.0, {}),   # light ochre canvas of the pool's sail umbrellas (renders ~#d9a067 sunlit)
+    'Cobble joint': ('#8e8a86', 0.9, 0.0, {}),    # mid-grey joints between the playground cobbles
 }
 
 
@@ -102,4 +106,53 @@ def build_materials():
             bsdf.inputs['Emission Strength'].default_value = strength
         m.diffuse_color = (*srgb(hexc), extra.get('alpha', 1.0))
         mats[name] = m
+    if 'Copper screen' in mats:
+        try:
+            perforated_copper(mats['Copper screen'])
+        except Exception:  # plain copper if the node setup is not available
+            pass
     return mats
+
+
+def perforated_copper(m):
+    """Blender renders only: dot perforation (UV in metres) whose dot size follows a soft ornament,
+    as on the copper screen of the shop front. The sheet stays the Principled BSDF (so the glTF
+    export keeps its colour); the holes are a dark diffuse mixed in by the dot mask."""
+    nt = m.node_tree
+    if nt.nodes.get('Perforation') is not None:
+        return
+    bsdf = nt.nodes.get('Principled BSDF')
+    out = nt.nodes.get('Material Output')
+    N = nt.nodes.new
+    bsdf.inputs['Base Color'].default_value = (*srgb('#e9b399'), 1.0)   # light, pinkish copper sheet
+    bsdf.inputs['Metallic'].default_value = 0.15
+    bsdf.inputs['Roughness'].default_value = 0.5
+    m.diffuse_color = (*srgb('#d29f86'), 1.0)
+    tc = N('ShaderNodeTexCoord')
+    vor = N('ShaderNodeTexVoronoi')            # regular grid of dots (randomness 0), ~0.11 m apart
+    vor.inputs['Scale'].default_value = 9.0
+    vor.inputs['Randomness'].default_value = 0.0
+    noise = N('ShaderNodeTexNoise')            # ornament: where the dots grow
+    noise.inputs['Scale'].default_value = 1.2
+    noise.inputs['Detail'].default_value = 1.0
+    rad = N('ShaderNodeMapRange')
+    rad.inputs['From Min'].default_value = 0.38
+    rad.inputs['From Max'].default_value = 0.62
+    rad.inputs['To Min'].default_value = 0.04
+    rad.inputs['To Max'].default_value = 0.46
+    dots = N('ShaderNodeMath')
+    dots.operation = 'LESS_THAN'
+    hole = N('ShaderNodeBsdfDiffuse')          # dark cavity behind the holes
+    hole.inputs['Color'].default_value = (*srgb('#8e5440'), 1.0)
+    mix = N('ShaderNodeMixShader')
+    mix.name = 'Perforation'
+    L = nt.links.new
+    L(tc.outputs['UV'], vor.inputs['Vector'])
+    L(tc.outputs['UV'], noise.inputs['Vector'])
+    L(noise.outputs['Fac'], rad.inputs['Value'])
+    L(vor.outputs['Distance'], dots.inputs[0])
+    L(rad.outputs['Result'], dots.inputs[1])
+    L(dots.outputs['Value'], mix.inputs['Fac'])
+    L(bsdf.outputs['BSDF'], mix.inputs[1])
+    L(hole.outputs['BSDF'], mix.inputs[2])
+    L(mix.outputs['Shader'], out.inputs['Surface'])
