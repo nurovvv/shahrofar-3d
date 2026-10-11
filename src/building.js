@@ -6,6 +6,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { MODEL_URL, toScene, towerByKey } from './config.js';
 import { groundTexture } from './textures.js';
+import { FACADE_MAPS } from './facade_maps.js';
 
 const GLASS = new Set(['Window glass', 'Curtain glass', 'Shop glass', 'Shop window', 'Gallery glass', 'Pool water', 'River']);
 
@@ -13,6 +14,7 @@ const GROUND = {
   Grass: 'grass', Lawn: 'grass', Asphalt: 'asphalt', Paving: 'paving', Sidewalk: 'paving', 'Deck paving': 'deck',
   Cobble: 'cobble', 'Deck stone': 'stone', 'Pool mosaic': 'mosaic', 'Copper screen': 'copper', 'Rubber blue': 'rubber',
   Promenade: 'promenade',
+  ...FACADE_MAPS,
 };
 const groundTex = {};
 
