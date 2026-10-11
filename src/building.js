@@ -5,14 +5,28 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { MODEL_URL, toScene, towerByKey } from './config.js';
+import { groundTexture } from './textures.js';
 
 const GLASS = new Set(['Window glass', 'Curtain glass', 'Shop glass', 'Pool water', 'River']);
 
+const GROUND = { Grass: 'grass', Lawn: 'grass', Asphalt: 'asphalt', Paving: 'paving', Sidewalk: 'paving', 'Deck paving': 'deck' };
+const groundTex = {};
+
 function tuneMaterial(m) {
-  if (GLASS.has(m.name)) {
-    m.envMapIntensity = 1.4;
-    m.roughness = Math.min(m.roughness, 0.12);
+  const g = GROUND[m.name];
+  if (g) {
+    groundTex[g] ??= groundTexture(g);
+    m.map = groundTex[g];
+    m.color.set(0xffffff);
+    m.needsUpdate = true;
   }
+  if (GLASS.has(m.name)) {
+    // lighter glass that picks up the sky
+    if (m.name !== 'River' && m.name !== 'Pool water') m.color.offsetHSL(0, -0.05, 0.12);
+    m.envMapIntensity = 1.2;
+    m.roughness = Math.max(0.06, Math.min(m.roughness, 0.12));
+  }
+  if (m.name.startsWith('Stained')) m.emissiveIntensity = 0.25;
   if (m.name === 'Railing glass' || m.name === 'Neighbour') {
     m.transparent = true;
     m.depthWrite = false;
@@ -82,7 +96,7 @@ export async function loadComplex(apartments, onProgress) {
       hotelPick = mesh;
       continue;
     }
-    const id = `${d.tower}${d.floor}${d.unit}`;
+    const id = `${d.tower}${d.floor}-${d.unit}`;
     const apt = apartments.find((a) => a.id === id);
     if (!apt) continue;
     mesh.userData.apt = apt;
@@ -95,7 +109,7 @@ export async function loadComplex(apartments, onProgress) {
     mesh.add(edges);
     box.setFromObject(mesh);
     const c = box.getCenter(new THREE.Vector3());
-    units.set(apt.id, { overlay: mesh, edges, center: new THREE.Vector3(c.x, apt.place.baseY, c.z), top: box.max.y });
+    units.set(apt.id, { overlay: mesh, edges, center: new THREE.Vector3(c.x, apt.baseY, c.z), top: box.max.y });
   }
 
   const each = (fn) => {

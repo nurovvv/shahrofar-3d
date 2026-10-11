@@ -7,11 +7,10 @@ import random
 
 import bpy
 import numpy as np
-from shapely import affinity
-from shapely.geometry import LineString, MultiPolygon, Point, Polygon, box
+from shapely.geometry import LineString, Point, Polygon, box
 from shapely.ops import unary_union
 
-from .geom import MeshBuilder, biggest, get_collection, make_object, resample, ring_coords
+from .geom import MeshBuilder, get_collection, make_object
 
 RIVER = (343.0, 426.0)          # water between these y
 AVENUE = (136.0, 164.0)         # bridge avenue between these x
@@ -77,6 +76,7 @@ def build_site(mats, col):
     neighbours(mats, col)
     trees(mats, col, rnd, roads)
     cars(mats, col, rnd)
+    street_furniture(mats, col, rnd, road_polys)
 
 
 def river(mb, rnd):
@@ -254,8 +254,13 @@ def tree_mesh(name, mats, h, r, light, seed=0):
     mb = MeshBuilder()
     mb.prism(Point(0, 0).buffer(0.2, quad_segs=2), 0, h * 0.55, 'Trunk')
     leaf = 'Leaves light' if light else 'Leaves'
-    for (dx, dy, dz, rr) in [(0, 0, 0.68, 1.0), (0.45, 0.25, 0.78, 0.7), (-0.4, -0.3, 0.75, 0.7), (0.1, -0.1, 0.92, 0.6)]:
-        mb.blob(dx * r, dy * r, h * dz, r * rr, r * rr, r * rr * 0.85, leaf, subdiv=1, jitter=0.12, rnd=rnd)
+    # a few branches and a crown of overlapping lumpy clumps
+    for k in range(4):
+        ang = k * math.pi / 2 + rnd.uniform(-0.4, 0.4)
+        mb.tube([(0, 0), (math.cos(ang) * r * 0.45, math.sin(ang) * r * 0.45)], [h * 0.5, h * 0.62], [h * 0.53, h * 0.66], 0.12, 'Trunk')
+    for (dx, dy, dz, rr) in [(0, 0, 0.68, 1.0), (0.45, 0.25, 0.74, 0.7), (-0.4, -0.3, 0.72, 0.72), (0.1, -0.1, 0.9, 0.65),
+                             (-0.3, 0.4, 0.8, 0.6), (0.35, -0.4, 0.66, 0.6)]:
+        mb.blob(dx * r, dy * r, h * dz, r * rr, r * rr, r * rr * 0.85, leaf, subdiv=2, jitter=0.15, rnd=rnd)
     return mb.to_mesh(name, mats)
 
 
@@ -314,15 +319,49 @@ def trees(mats, col, rnd, roads):
         TREES.append([round(x, 2), round(y, 2), round(s, 3), round(ob.scale[2], 3), round(ob.rotation_euler[2], 3), k])
 
 
+# (x, y, z, rotation, colour) of every car and (x, y, z, colour) of every person, for the web viewer
+CARS = []
+PEOPLE = []
+CAR_COLOURS = ['Car', 'Car', 'Car dark', 'Car red', 'Neighbour solid', 'Car', 'Car dark']
+
+# Side profile of a saloon car (x along the car, z up), 4.5 m long.
+CAR_BODY = [(-2.25, 0.32), (2.25, 0.32), (2.3, 0.62), (2.2, 0.82), (1.1, 0.92), (0.55, 1.38), (-0.85, 1.42),
+            (-1.55, 0.98), (-2.2, 0.92), (-2.3, 0.62)]
+CAR_GLASS = [(1.0, 0.94), (0.52, 1.33), (-0.82, 1.37), (-1.45, 0.98)]
+
+
+def side_extrude(mb, profile, y0, y1, mat):
+    """Extrude a side profile (x, z) across the car (y)."""
+    n = len(profile)
+    for i in range(n):
+        (xa, za), (xb, zb) = profile[i], profile[(i + 1) % n]
+        mb.face([(xa, y0, za), (xb, y0, zb), (xb, y1, zb), (xa, y1, za)], mat)
+    mb.face([(x, y0, z) for x, z in profile][::-1], mat)
+    mb.face([(x, y1, z) for x, z in profile], mat)
+
+
 def car_mesh(name, mats, body):
     mb = MeshBuilder()
-    mb.box(0, 0, 0.25, 4.4, 1.8, 0.75, body)
-    mb.box(-0.2, 0, 1.0, 2.4, 1.6, 0.55, 'Car dark')
+    side_extrude(mb, CAR_BODY, -0.88, 0.88, body)
+    side_extrude(mb, CAR_GLASS, -0.9, 0.9, 'Car dark')
+    return mb.to_mesh(name, mats)
+
+
+def wheels_mesh(name, mats):
+    mb = MeshBuilder()
+    for x in (-1.45, 1.45):
+        for y in (-0.92, 0.72):
+            # wheel = short cylinder across the car (axis along y)
+            ring = [(x + 0.33 * math.cos(a), 0.33 + 0.33 * math.sin(a)) for a in np.linspace(0, 2 * math.pi, 14)[:-1]]
+            side_extrude(mb, ring, y, y + 0.2, 'Car dark')
     return mb.to_mesh(name, mats)
 
 
 def cars(mats, col, rnd):
-    protos = [car_mesh(f'Car {m}', mats, m) for m in ('Car', 'Car', 'Car dark', 'Car red', 'Neighbour solid')]
+    CARS.clear()
+    PEOPLE.clear()
+    protos = {}
+    wheels = wheels_mesh('Car wheels', mats)
     ccol = get_collection('Cars', col)
     placed = []
     x0, x1 = AVENUE
@@ -334,19 +373,70 @@ def cars(mats, col, rnd):
                 placed.append((x, y + rnd.uniform(-3, 3), z + 0.05, math.pi / 2 if k < 4 else -math.pi / 2))
     for x in np.arange(-300, 300, 12.0):
         if rnd.random() < 0.25 and not (x0 - 3 < x < x1 + 3):
-            placed.append((x, 311.0 if rnd.random() < 0.5 else 317.0, 0.03, 0.0))
+            placed.append((x, 311.0 if rnd.random() < 0.5 else 317.0, 0.03, 0.0 if rnd.random() < 0.5 else math.pi))
     # parked cars and a few on the local roads (as on the render)
     a, b = np.array([-22.5, 218.3]), np.array([5.9, 187.0])
     t = (b - a) / np.linalg.norm(b - a)
     n = np.array([t[1], -t[0]])
-    for i in [1, 4, 6, 9]:
+    for i in [1, 2, 4, 6, 7, 9]:
         p = a + t * (i * 2.6 + 1.3) - n * 2.6
         placed.append((p[0], p[1], 0.04, math.atan2(n[1], n[0])))
     for (x, y, r) in [(-40, 225, -0.6), (-4, 196, -0.75), (35, 158, -0.6), (75, 200, 1.3), (82, 240, 1.35), (64, 165, 1.2),
                       (86, 190, 1.4), (96, 236, 1.3), (100, 255, 1.3), (-62, 260, 1.57), (-20, 316, 0), (70, 311, 0.1), (16, 222, -0.4)]:
         placed.append((x, y, 0.03, r))
     for i, (x, y, z, r) in enumerate(placed):
-        ob = bpy.data.objects.new(f'Car.{i:03d}', protos[rnd.randrange(len(protos))])
-        ob.location = (x, y, z)
-        ob.rotation_euler = (0, 0, r)
-        ccol.objects.link(ob)
+        k = rnd.randrange(len(CAR_COLOURS))
+        if k not in protos:
+            protos[k] = car_mesh(f'Car {k}', mats, CAR_COLOURS[k])
+        for me, nm in ((protos[k], 'Car'), (wheels, 'Wheels')):
+            ob = bpy.data.objects.new(f'{nm}.{i:03d}', me)
+            ob.location = (x, y, z)
+            ob.rotation_euler = (0, 0, r)
+            ccol.objects.link(ob)
+        CARS.append([round(x, 2), round(y, 2), round(z, 2), round(r, 3), k])
+
+
+def street_furniture(mats, col, rnd, road_polys):
+    """Lamp posts along the local roads, benches on the plaza, and where people stand."""
+    mb = MeshBuilder()
+    for pts, w in ROADS[1:7]:
+        line = LineString(pts)
+        for side in (-1, 1):
+            off = line.offset_curve(side * (w / 2 + 0.9))
+            if off.is_empty or off.geom_type != 'LineString':
+                continue
+            d = 12.0
+            while d < off.length:
+                p = off.interpolate(d)
+                q = line.interpolate(line.project(p))
+                ang = math.atan2(q.y - p.y, q.x - p.x)
+                mb.box(p.x, p.y, 0.1, 0.14, 0.14, 7.5, 'Metal')
+                mb.box(p.x + math.cos(ang) * 0.6, p.y + math.sin(ang) * 0.6, 7.5, 1.3, 0.12, 0.1, 'Metal', rot=ang)
+                mb.box(p.x + math.cos(ang) * 1.15, p.y + math.sin(ang) * 1.15, 7.32, 0.5, 0.22, 0.18, 'Sign', rot=ang)
+                d += 26.0
+    # benches around the plaza, facing out
+    for (x, y, r) in [(-50, 236, 0.6), (-34, 244, 0.2), (36, 214, 1.4), (70, 230, 1.6), (68, 180, 1.3), (-64, 250, 1.57),
+                      (30, 290, 3.0), (-10, 298, 3.1), (-40, 296, 3.2)]:
+        mb.box(x, y, 0.1, 1.8, 0.5, 0.45, 'Wood', rot=r)
+        mb.box(x - math.sin(r) * 0.22, y + math.cos(r) * 0.22, 0.55, 1.8, 0.08, 0.45, 'Wood', rot=r)
+    make_object('Street furniture', mb.to_mesh('Street furniture', mats), col)
+
+    # people: on the plaza and sidewalks around the complex, on the decks, along the embankment
+    walk = unary_union([r.buffer(2.4).difference(r.buffer(0.2)) for r in road_polys])
+    spots = []
+    while len(spots) < 140:
+        x, y = rnd.uniform(-80, 110), rnd.uniform(140, 335)
+        if walk.contains(Point(x, y)) or rnd.random() < 0.08:
+            spots.append((x, y, 0.12))
+    for _ in range(18):
+        spots.append((rnd.uniform(28, 62), rnd.uniform(232, 268), 15.0))
+    for _ in range(10):
+        spots.append((rnd.uniform(-16, 8), rnd.uniform(250, 272), 20.5))
+    for x, y, z in spots:
+        PEOPLE.append([round(x, 2), round(y, 2), z, rnd.randrange(6)])
+    pcol = get_collection('People', col)
+    mb = MeshBuilder()
+    for x, y, z, k in PEOPLE:
+        mb.prism(Point(x, y).buffer(0.2, quad_segs=3), z, z + 1.45, ['Car red', 'Car dark', 'Play blue', 'Wood', 'Sign', 'Play orange'][k], 'Car dark')
+        mb.blob(x, y, z + 1.6, 0.13, 0.13, 0.15, 'Wood', subdiv=1)
+    make_object('People', mb.to_mesh('People', mats), pcol)

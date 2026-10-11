@@ -1,15 +1,15 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { RESIDENTIAL, STATUS, towerByKey } from './config.js';
+import { RESIDENTIAL, STATUS, toScene, towerByKey } from './config.js';
 import { apartments, aptsOnFloor } from './data.js';
 import { buildWorld } from './world.js';
 import { loadComplex } from './building.js';
-import { buildInterior } from './interior.js';
+import { buildFloor } from './floor.js';
 import { WalkControls } from './walk.js';
-import { drawPlan, planFlip, planTransform } from './plan.js';
+import { drawPlan, planTransform } from './plan.js';
 
 const $ = (s) => document.querySelector(s);
+const roomsText = (n) => `${n}-room`;
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
 // ---------- renderer / scene ----------
@@ -25,8 +25,6 @@ const canvas = renderer.domElement;
 
 const scene = new THREE.Scene();
 const pmrem = new THREE.PMREMGenerator(renderer);
-scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-scene.environmentIntensity = 0.45;
 
 const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.5, 6000);
 // the aerial view of the marketing render: from the land side, river and bridge behind
@@ -43,7 +41,20 @@ controls.maxPolarAngle = Math.PI * 0.48;
 controls.autoRotate = true;
 controls.autoRotateSpeed = 0.35;
 
-buildWorld(scene);
+const world = buildWorld(scene);
+// reflections: the sky dome with a bright sun, so glass and car paint reflect the real sky
+{
+  const envScene = new THREE.Scene();
+  envScene.add(world.sky.clone());
+  const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(60, 16, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(14, 13, 11) }));
+  sunDisc.position.copy(world.sun.position).setLength(1400);
+  envScene.add(sunDisc);
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(2400, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x55603a }));
+  ground.position.y = -40;
+  envScene.add(ground);
+  scene.environment = pmrem.fromScene(envScene, 0.02).texture;
+  scene.environmentIntensity = 0.95;
+}
 const walk = new WalkControls(camera, canvas);
 
 let building = null; // set once the model has loaded
@@ -99,13 +110,15 @@ function floorCentre(tower, floor) {
 function floorView(tower, floor) {
   const target = floorCentre(tower, floor);
   const az = azimuth();
-  return { pos: target.clone().add(new THREE.Vector3(Math.sin(az) * 36, 40, Math.cos(az) * 36)), target };
+  return { pos: target.clone().add(new THREE.Vector3(Math.sin(az) * 30, 44, Math.cos(az) * 30)), target };
 }
 function aptView(apt) {
   const c = building.units.get(apt.id).center;
   const target = new THREE.Vector3(c.x, c.y + 0.5, c.z);
-  const { ev } = apt.place; // towards the apartment's windows
-  return { pos: target.clone().add(new THREE.Vector3(ev.x, 0, ev.z).multiplyScalar(20)).add(new THREE.Vector3(0, 26, 0)), target };
+  // from outside the facade, in line with the tower's centre and the apartment
+  const t = towerByKey[apt.tower], tc = toScene(t.centre[0], t.centre[1]);
+  const dir = new THREE.Vector3(c.x - tc.x, 0, c.z - tc.z).normalize();
+  return { pos: target.clone().add(dir.multiplyScalar(22)).add(new THREE.Vector3(0, 26, 0)), target };
 }
 
 // ---------- overlays ----------
@@ -155,7 +168,7 @@ function buildLabels() {
     const el = document.createElement('div');
     el.className = 'tag';
     el.style.borderColor = STATUS[a.status].css;
-    el.innerHTML = `<b>No. ${a.number}</b> <span>· ${a.rooms} rooms · ${a.area} m²</span><br>${money.format(a.price)}`;
+    el.innerHTML = `<b>No. ${a.number}</b> <span>· ${roomsText(a.rooms)} · ${a.area} m²</span><br>${money.format(a.price)}`;
     el.onclick = () => selectApt(a);
     el.onpointerenter = () => setHover(a);
     el.onpointerleave = () => setHover(null);
@@ -166,8 +179,11 @@ function buildLabels() {
 const tmp = new THREE.Vector3();
 function updateLabels() {
   for (const { el, apt } of labels) {
+    // tag above the apartment, pushed out from the tower's centre so neighbours don't overlap
     const u = building.units.get(apt.id);
-    tmp.set(u.center.x, u.top + 0.6, u.center.z).project(camera);
+    const t = towerByKey[apt.tower], tc = toScene(t.centre[0], t.centre[1]);
+    const dx = u.center.x - tc.x, dz = u.center.z - tc.z, d = Math.hypot(dx, dz) || 1;
+    tmp.set(u.center.x + (dx / d) * 9, u.top + 0.6, u.center.z + (dz / d) * 9).project(camera);
     const hidden = tmp.z > 1 || (filterActive() && !matches(apt));
     el.style.display = hidden ? 'none' : '';
     el.style.left = `${((tmp.x + 1) / 2) * innerWidth}px`;
@@ -218,7 +234,7 @@ function renderSide() {
     const areas = apartments.map((a) => a.area);
     side.innerHTML = `
       <h2>Choose your apartment</h2>
-      <div class="sub">${RESIDENTIAL.length} residential towers · ${apartments.length} apartments · 2–3 rooms</div>
+      <div class="sub">${RESIDENTIAL.length} residential towers · ${apartments.length} apartments · ${Math.min(...apartments.map((a) => a.rooms))}–${Math.max(...apartments.map((a) => a.rooms))} rooms</div>
       <div class="stats">
         <div class="stat"><b>${avail.length}</b><span>available</span></div>
         <div class="stat"><b>${money.format(from / 1000)}k</b><span>price from</span></div>
@@ -226,7 +242,7 @@ function renderSide() {
       </div>
       <div class="label">Rooms</div>
       <div class="seg" data-filter="rooms">
-        ${[0, 2, 3].map((r) => `<button data-v="${r}" class="${state.filter.rooms === r ? 'on' : ''}">${r ? `${r} rooms` : 'All'}</button>`).join('')}
+        ${[0, ...new Set(apartments.map((a) => a.rooms))].sort().map((r) => `<button data-v="${r}" class="${state.filter.rooms === r ? 'on' : ''}">${r ? roomsText(r) : 'All'}</button>`).join('')}
       </div>
       <label class="toggle"><input type="checkbox" id="only-avail" ${state.filter.availableOnly ? 'checked' : ''}/> Show available only</label>
       <div class="note">Hover over a tower to see each floor, then click to look inside. Block A is the hotel. ${filterActive() ? 'Matching apartments are highlighted on the building.' : ''}</div>`;
@@ -240,7 +256,7 @@ function renderSide() {
         ${list.map((a) => `
           <button class="apt-row ${filterActive() && !matches(a) ? 'muted' : ''}" data-apt="${a.id}">
             <span class="t">No. ${a.number}</span><span class="p">${money.format(a.price)}</span>
-            <span class="d">${a.rooms} rooms · ${a.area} m² · ${a.view}</span><span>${statusChip(a)}</span>
+            <span class="d">${roomsText(a.rooms)} · ${a.area} m² · ${a.view}</span><span>${statusChip(a)}</span>
           </button>`).join('')}
       </div>
       <div class="note">Click an apartment on the model or in this list.</div>`;
@@ -256,8 +272,8 @@ function renderSide() {
         <div><span>Rooms</span><b>${a.rooms}</b></div>
         <div><span>Total area</span><b>${a.area} m²</b></div>
         <div><span>Floor</span><b>${a.floor} of ${a.floors}</b></div>
-        <div><span>Ceiling height</span><b>2.9 m</b></div>
-        <div style="grid-column: span 2"><span>Layout</span><b>${a.layout.summary}</b></div>
+        <div><span>Ceiling height</span><b>${a.ceiling} m</b></div>
+        <div style="grid-column: span 2"><span>Layout</span><b>${a.summary}${a.balcony ? `, balcony ${a.balcony} m²` : ''}</b></div>
         <div style="grid-column: span 2"><span>View</span><b>${a.view}</b></div>
       </div>
       <div class="price">${money.format(a.price)}</div>
@@ -266,7 +282,7 @@ function renderSide() {
         <button class="btn primary" data-act="walk">🚶 Walk inside in 3D</button>
         <button class="btn" data-act="request">Request a viewing</button>
       </div>`;
-    drawPlan(side.querySelector('.plan'), a.layout, { flip: planFlip(a.place) });
+    drawPlan(side.querySelector('.plan'), a);
   }
 }
 $('#side').addEventListener('click', (e) => {
@@ -338,11 +354,9 @@ function selectFloor(tower, floor) {
   if (state.tower !== tower || state.floor !== floor || state.mode !== 'floor') {
     clearDollhouse();
     building.showUpTo(tower, floor);
-    for (const a of aptsOnFloor(tower, floor)) {
-      const d = buildInterior(a, { full: false });
-      scene.add(d.group);
-      dollhouse.push(d);
-    }
+    const d = buildFloor(tower, floor, aptsOnFloor(tower, floor));
+    scene.add(d.group);
+    dollhouse.push(d);
   }
   Object.assign(state, { mode: 'floor', tower, floor, listTower: tower, apt: null, hoverHotel: false });
   controls.autoRotate = false;
@@ -375,7 +389,7 @@ function enterWalk(a) {
     labelsEl.innerHTML = '';
     labels = [];
     building.showAll(a.tower, a.floor);
-    walkInterior = buildInterior(a, { full: true });
+    walkInterior = buildFloor(a.tower, a.floor, aptsOnFloor(a.tower, a.floor), a);
     scene.add(walkInterior.group);
     state.mode = 'walk';
     state.hoverApt = null;
@@ -388,7 +402,7 @@ function enterWalk(a) {
     walk.start(walkInterior, scene);
     $('#ext-ui').hidden = true;
     $('#walk-ui').hidden = false;
-    $('#walk-title').innerHTML = `<b>No. ${a.number}</b> · ${a.rooms} rooms · ${a.area} m² · Floor ${a.floor} · ${money.format(a.price)}`;
+    $('#walk-title').innerHTML = `<b>No. ${a.number}</b> · ${roomsText(a.rooms)} · ${a.area} m² · Floor ${a.floor} · ${money.format(a.price)}`;
     prepareMinimap(a);
   });
 }
@@ -428,14 +442,12 @@ addEventListener('keydown', (e) => {
 const mini = $('#minimap canvas');
 let miniBg = null, miniT = null;
 function prepareMinimap(a) {
-  const flip = planFlip(a.place);
   const off = document.createElement('canvas');
   off.width = mini.clientWidth; // drawPlan sizes by CSS px when the canvas isn't in the page
   off.height = mini.clientHeight;
-  drawPlan(off, a.layout, { flip, pad: 6, labels: false });
+  drawPlan(off, a, { pad: 6, labels: false });
   miniBg = off;
-  miniT = planTransform(a.layout, mini.clientWidth, mini.clientHeight, 6, flip);
-  miniT.flip = flip;
+  miniT = planTransform(a, mini.clientWidth, mini.clientHeight, 6);
 }
 function drawMinimap() {
   if (!miniBg || !walk.enabled) return;
@@ -451,8 +463,8 @@ function drawMinimap() {
   g.drawImage(miniBg, 0, 0);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   const s = walk.localState();
-  const x = miniT.px(s.u), y = miniT.py(s.v);
-  const ang = Math.atan2(-s.dv, (miniT.flip ? -1 : 1) * s.du);
+  const x = miniT.px(s.x), y = miniT.py(s.y);
+  const ang = Math.atan2(-s.dy, s.dx);
   g.fillStyle = 'rgba(31, 95, 139, 0.25)';
   g.beginPath();
   g.moveTo(x, y);

@@ -59,3 +59,60 @@ export function tileTexture() {
   }
   return finish(c);
 }
+
+// Ground textures for the site (model UVs are in metres; `metres` = size of one tile)
+function noiseCanvas(size, base, spots) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  g.fillStyle = base;
+  g.fillRect(0, 0, size, size);
+  let seed = 3;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (const [n, rmin, rmax, colors, alpha] of spots) {
+    for (let i = 0; i < n; i++) {
+      const x = rnd() * size, y = rnd() * size, r = rmin + rnd() * (rmax - rmin);
+      g.globalAlpha = alpha * (0.4 + rnd() * 0.6);
+      g.fillStyle = colors[Math.floor(rnd() * colors.length)];
+      for (const ox of [-size, 0, size]) {
+        for (const oy of [-size, 0, size]) {
+          g.beginPath();
+          g.arc(x + ox, y + oy, r, 0, Math.PI * 2);
+          g.fill();
+        }
+      }
+    }
+  }
+  g.globalAlpha = 1;
+  return { c, g };
+}
+
+export function groundTexture(kind) {
+  let canvas, metres;
+  if (kind === 'grass') {
+    const { c } = noiseCanvas(256, '#5f6e1a', [
+      [60, 18, 40, ['#6f7f22', '#56661a', '#4d5c16', '#7a8a2a'], 0.35],
+      [1800, 0.6, 1.8, ['#84952e', '#46541a', '#6a7a20'], 0.5],
+    ]);
+    canvas = c; metres = 14;
+  } else if (kind === 'asphalt') {
+    const { c } = noiseCanvas(256, '#57585c', [
+      [40, 10, 30, ['#5d5e62', '#515256'], 0.3],
+      [4000, 0.4, 1.0, ['#6a6b70', '#47484c', '#77787c'], 0.6],
+    ]);
+    canvas = c; metres = 6;
+  } else {
+    // paving slabs with joints
+    const { c, g } = noiseCanvas(256, kind === 'deck' ? '#dcb88f' : '#c8bcab', [[1200, 0.5, 1.2, ['#d4c9b9', '#b9ad9c'], 0.4]]);
+    g.strokeStyle = 'rgba(90, 80, 70, 0.35)';
+    g.lineWidth = 2;
+    for (let i = 0; i <= 4; i++) {
+      g.beginPath(); g.moveTo(i * 64, 0); g.lineTo(i * 64, 256); g.stroke();
+      g.beginPath(); g.moveTo(0, i * 64); g.lineTo(256, i * 64); g.stroke();
+    }
+    canvas = c; metres = 2.4;
+  }
+  const tex = finish(canvas, 8);
+  tex.repeat.set(1 / metres, 1 / metres);
+  return tex;
+}

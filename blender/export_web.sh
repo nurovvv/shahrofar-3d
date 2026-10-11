@@ -2,7 +2,8 @@
 # Rebuild the 3D model of the complex and copy it into the web viewer.
 #
 #   pip install bpy shapely          # Blender as a Python module (Python 3.13), or run with a Blender 4.2+ binary
-#   blender/export_web.sh            # writes public/models/shahrofar.glb and src/model/complex.json
+#   blender/plans/make_plans.sh SET.pdf   # (only when the drawings change) -> blender/plans/plans.json
+#   blender/export_web.sh            # writes public/models/shahrofar.glb, src/model/complex.json and plans.json
 #
 # Also leaves build/shahrofar.blend (open it in Blender) and, with RENDER=1, build/shahrofar.png:
 # a still from the camera that matches the aerial marketing render.
@@ -29,4 +30,5 @@ $GT weld "$OUT.dedup.glb" "$OUT.weld.glb"
 $GT meshopt "$OUT.weld.glb" public/models/shahrofar.glb
 rm -f "$OUT.dedup.glb" "$OUT.weld.glb"
 cp "$OUT.json" src/model/complex.json
-ls -la public/models/shahrofar.glb src/model/complex.json
+cp "$OUT.plans.json" src/model/plans.json
+ls -la public/models/shahrofar.glb src/model/complex.json src/model/plans.json

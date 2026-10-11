@@ -22,7 +22,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from complex.geom import get_collection  # noqa: E402
 from complex.materials import build_materials  # noqa: E402
-from complex.towers import TOWER_A, TOWER_B, TOWER_V, build_hotel, build_residential  # noqa: E402
+from complex.drawn import build_drawn_tower  # noqa: E402
+from complex.towers import TOWER_A, build_hotel  # noqa: E402
 
 # Camera recovered from the reference aerial image (2000 x 1413 px):
 # focal length 2124 px, 37.2 deg down, heading 8.7 deg east of north, 200 m up.
@@ -178,7 +179,8 @@ def main():
     scene.unit_settings.system = 'METRIC'
     mats = build_materials()
     root = get_collection('Shahrofar complex')
-    towers = [build_residential(TOWER_V, mats, root), build_residential(TOWER_B, mats, root), build_hotel(TOWER_A, mats, root)]
+    # blocks V and B from the architect's floor plans, the hotel (not for sale) from the renders
+    towers = [build_drawn_tower('V', mats, root), build_drawn_tower('B', mats, root), build_hotel(TOWER_A, mats, root)]
     if not args.no_site:
         try:
             from complex.podium import build_podium
@@ -198,17 +200,24 @@ def main():
     out = os.path.abspath(args.out)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     bpy.ops.wm.save_as_mainfile(filepath=out + '.blend', compress=True)
-    from complex import site
+    from complex import drawn, site
+    # floor plans for the viewer: only what it draws (rooms, walls, windows, balconies)
+    plans = drawn.load_plans()
+    used = sorted({fl['plan'] for t in towers for fl in t.get('floors', []) if 'plan' in fl})
+    keep = ('slab', 'enclosure', 'walls', 'struct', 'windows', 'glazing', 'common', 'apartments')
+    with open(out + '.plans.json', 'w') as f:
+        json.dump({k: {kk: plans[k][kk] for kk in keep if kk in plans[k]} for k in used}, f, separators=(',', ':'))
     with open(out + '.json', 'w') as f:
         json.dump(dict(site_centre=SITE_CENTRE, towers=towers,
-                       tree_protos=[dict(h=h, r=r, light=l) for h, r, l in site.TREE_PROTOS], trees=site.TREES), f)
+                       tree_protos=[dict(h=h, r=r, light=l) for h, r, l in site.TREE_PROTOS], trees=site.TREES,
+                       cars=site.CARS, people=site.PEOPLE), f)
     if not args.no_glb:
-        # the viewer draws the trees itself (instanced), so leave them out of the GLB
-        col = bpy.data.collections.get('Trees')
-        if col:
-            for ob in list(col.objects):
-                bpy.data.objects.remove(ob)
-        merge_collection('Cars')
+        # the viewer draws trees, cars and people itself (instanced), so leave them out of the GLB
+        for name in ('Trees', 'Cars', 'People'):
+            col = bpy.data.collections.get(name)
+            if col:
+                for ob in list(col.objects):
+                    bpy.data.objects.remove(ob)
         bpy.ops.export_scene.gltf(filepath=out + '.glb', export_format='GLB', export_apply=True,
                                   export_cameras=False, export_lights=False, export_extras=True)
     if args.render:

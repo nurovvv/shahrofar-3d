@@ -9,7 +9,7 @@ import math
 import bpy
 import numpy as np
 import shapely
-from shapely.geometry import LineString, MultiPolygon, Polygon, box
+from shapely.geometry import Polygon
 
 
 # ----------------------------------------------------------------------------
@@ -274,7 +274,6 @@ class MeshBuilder:
         idx = [slot[m] for m in self.mats]
         me.polygons.foreach_set('material_index', idx)
         uvl = me.uv_layers.new(name='UVMap')
-        k = 0
         data = []
         for f, uv in zip(self.faces, self.uvs):
             if uv is None:

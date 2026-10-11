@@ -3,7 +3,6 @@
 import * as THREE from 'three';
 
 const EYE = 1.62;
-const RADIUS = 0.25;
 
 export class WalkControls {
   constructor(camera, dom) {
@@ -41,12 +40,9 @@ export class WalkControls {
   start(interior, scene) {
     this.interior = interior;
     this.enabled = true;
-    const { spawn } = interior.apt.layout;
-    const w = interior.toWorld(spawn.u, spawn.v);
-    this.pos.set(w.x, w.z);
-    const { eu, ev } = interior.apt.place;
-    const dx = eu.x * spawn.du + ev.x * spawn.dv, dz = eu.z * spawn.du + ev.z * spawn.dv;
-    this.yaw = Math.atan2(-dx, -dz);
+    const { spawn } = interior;
+    this.pos.set(spawn.x, spawn.z);
+    this.yaw = spawn.yaw;
     this.pitch = -0.08;
     this.target = null;
     scene.add(this.ring);
@@ -114,35 +110,6 @@ export class WalkControls {
     }
   }
 
-  // Push a point in local apartment space out of walls and furniture.
-  collide(u, v) {
-    const { colliders, apt } = this.interior;
-    const { W, D } = apt.layout;
-    for (let iter = 0; iter < 3; iter++) {
-      for (const c of colliders) {
-        const cu = THREE.MathUtils.clamp(u, c.u0, c.u1);
-        const cv = THREE.MathUtils.clamp(v, c.v0, c.v1);
-        const du = u - cu, dv = v - cv;
-        const d2 = du * du + dv * dv;
-        if (d2 >= RADIUS * RADIUS) continue;
-        if (d2 > 1e-9) {
-          const d = Math.sqrt(d2);
-          u = cu + (du / d) * RADIUS;
-          v = cv + (dv / d) * RADIUS;
-        } else {
-          // centre is inside the box: leave by the shortest side
-          const opts = [[c.u0 - RADIUS - u, 0], [c.u1 + RADIUS - u, 0], [0, c.v0 - RADIUS - v], [0, c.v1 + RADIUS - v]];
-          opts.sort((a, b) => Math.abs(a[0] + a[1]) - Math.abs(b[0] + b[1]));
-          u += opts[0][0];
-          v += opts[0][1];
-        }
-      }
-      u = THREE.MathUtils.clamp(u, RADIUS, W - RADIUS);
-      v = THREE.MathUtils.clamp(v, RADIUS, D - RADIUS);
-    }
-    return { u, v };
-  }
-
   update(dt) {
     if (!this.enabled) return;
     const k = this.keys;
@@ -182,9 +149,7 @@ export class WalkControls {
 
     if (mx || mz) {
       const before = this.pos.clone();
-      const l = this.interior.toLocal(this.pos.x + mx, this.pos.y + mz);
-      const c = this.collide(l.u, l.v);
-      const w = this.interior.toWorld(c.u, c.v);
+      const w = this.interior.move(this.pos.x, this.pos.y, this.pos.x + mx, this.pos.y + mz);
       this.pos.set(w.x, w.z);
       const moved = before.distanceTo(this.pos);
       this.bob += moved * 9;
@@ -203,11 +168,11 @@ export class WalkControls {
     this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
   }
 
-  // position + view direction in the apartment's local frame, for the mini-map
+  // position + view direction on the apartment's floor plan, for the mini-map
   localState() {
-    const { eu, ev } = this.interior.apt.place;
-    const l = this.interior.toLocal(this.pos.x, this.pos.y);
-    const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
-    return { u: l.u, v: l.v, du: fx * eu.x + fz * eu.z, dv: fx * ev.x + fz * ev.z };
+    const { frame } = this.interior;
+    const p = frame.toPlan(this.pos.x, this.pos.y);
+    const f = frame.toPlan(this.pos.x - Math.sin(this.yaw), this.pos.y - Math.cos(this.yaw));
+    return { x: p.x, y: p.y, dx: f.x - p.x, dy: f.y - p.y };
   }
 }

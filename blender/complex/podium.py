@@ -8,9 +8,8 @@ import math
 import bpy
 import numpy as np
 from shapely.geometry import LineString, Point, Polygon, box
-from shapely.ops import unary_union
 
-from .geom import MeshBuilder, biggest, get_collection, make_object, resample, ring_coords, simplify_ring
+from .geom import MeshBuilder, biggest, get_collection, make_object, ring_coords, simplify_ring
 
 GF_TOP = 6.0       # shops
 L2_TOP = 10.5      # glass gallery
@@ -226,7 +225,6 @@ def build_decks(mats, col, poly, ww):
     mb = MeshBuilder()
     # --- pool deck in front of the hotel -------------------------------------
     zE = DECK_E
-    pool = Point(0, 0).buffer(1.0)
     pool_poly = Polygon([(-7.0, -3.4), (7.0, -3.4), (7.0, 3.4), (-7.0, 3.4)]).buffer(1.0, join_style='round').buffer(-1.0)
     from shapely import affinity
     pool_poly = affinity.translate(affinity.rotate(pool_poly, 28, origin=(0, 0)), 45.0, 247.0)
