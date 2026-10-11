@@ -4,7 +4,9 @@
                 roads, long lens-shaped planters (lawn, round shrubs, small trees) following the curve,
                 white spherical bollards along the kerb
     playground  on the blue part of the ground playground (site.playground): deep blue rubber,
-                a dark-brown geodesic climbing dome, a timber play tower with a slide and a swing set
+                a dark-brown hexagonal climbing pavilion (splayed legs, ring beam, pyramid roof, every
+                face a triangular lattice), a timber play tower with a slide and a swing set; the
+                generic site play towers that stood on the blue part are taken out
 
 build(mats, col, rnd, roads) is called from site.build_site after the street furniture.
 """
@@ -15,7 +17,7 @@ import numpy as np
 from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import unary_union
 
-from .geom import MeshBuilder, biggest, get_collection, icosphere, make_object
+from .geom import MeshBuilder, biggest, get_collection, make_object
 
 Z0 = 0.0
 PAVE_TOP = 0.15         # promenade surface (site plaza is at +0.10, sidewalks at +0.12)
@@ -33,9 +35,13 @@ LENSES = [(44.0, 26.0, 3.8, 11.5, 3), (78.0, 22.0, 3.0, 9.0, 2), (106.0, 18.0, 3
 # ground playground (blue part of site.playground)
 BLUE = [(2.0, 222.6), (16.2, 219.3), (16.5, 205.0), (14.7, 196.1), (10.4, 193.2), (1.0, 199.0)]
 PLAY_Z = 0.16
-DOME = (10.3, 198.8, 2.45)           # x, y, radius (~4.9 m across, ~3.3 m high)
-TOWER = (4.1, 203.6, -math.pi / 2)   # x, y, rotation (the slide runs out along the rotated +x: south)
-SWINGS = (12.6, 210.6, math.radians(80))
+# as on the render seen from the river: the swing left of the pavilion, the play tower in front of it
+PAVILION = (7.0, 203.0)              # hexagonal climbing pavilion: ~6.6 m across, ring beam +3.0, apex +5.0
+PAV_R0, PAV_R1, PAV_H1, PAV_H2 = 2.6, 3.3, 3.0, 5.0
+TOWER = (10.6, 209.8, math.pi / 2)   # x, y, rotation (the slide runs out along the rotated +x: north)
+SWINGS = (13.4, 201.4, math.radians(88))
+# site.playground's generic wooden play towers (x, y) standing on the blue part: replaced by the above
+SITE_TOWERS_ON_BLUE = [(8.0, 214.0), (11.0, 205.0), (5.0, 208.0)]
 
 
 def build(mats, col, rnd, roads):
@@ -52,6 +58,11 @@ def build(mats, col, rnd, roads):
     mb = MeshBuilder()
     playground(mb, r)
     make_object('Ground playground', mb.to_mesh('Ground playground', mats), get_collection('Street', col))
+    try:
+        n = clear_site_towers()
+        print(f'[street] playground: took {n} faces of site play towers off the blue area')
+    except Exception as e:  # the site towers stay
+        print('[street] playground: could not clear the site play towers:', e)
 
 
 # ----------------------------------------------------------------------------------------------
@@ -237,46 +248,128 @@ def playground(mb, rnd):
     blue = Polygon(BLUE).buffer(1.5).buffer(-1.5)
     mb.prism(blue.buffer(-0.12), PLAY_Z, PLAY_Z + 0.01, 'Rubber blue', 'Rubber blue')
     z = PLAY_Z + 0.01
-    geodesic_dome(mb, *DOME, z)
+    pavilion(mb, *PAVILION, z)
     play_tower(mb, *TOWER, z)
     swing_set(mb, *SWINGS, z)
 
 
-def _rot_to_z(v):
-    """Rotation matrix taking unit vector v onto +z."""
-    v = np.array(v, float) / np.linalg.norm(v)
-    zax = np.array([0, 0, 1.0])
-    c = float(v @ zax)
-    axis = np.cross(v, zax)
-    s = np.linalg.norm(axis)
-    if s < 1e-9:
-        return np.eye(3)
-    axis /= s
-    K = np.array([[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]])
-    return np.eye(3) + K * s + K @ K * (1 - c)
-
-
-def geodesic_dome(mb, x, y, r, z, mat='Dark lattice', stretch=1.35):
-    """2V geodesic half-dome of struts (a pentagon vertex on top, a 10-vertex ring on the ground)."""
-    from .deck.common import rod
-    verts, faces = icosphere(1)
-    R = _rot_to_z(verts[5])                     # (0, 1, t) normalised: an original icosahedron vertex
-    P = [R @ np.array(v) for v in verts]
-    edges = set()
-    for f in faces:
-        for a, b in ((f[0], f[1]), (f[1], f[2]), (f[2], f[0])):
-            edges.add((min(a, b), max(a, b)))
-    for a, b in edges:
-        if P[a][2] < -0.02 or P[b][2] < -0.02:
+def clear_site_towers(half=1.47):
+    """Delete the faces of site.playground's wooden play towers that stand on the blue part
+    (every vertex inside the tower's 2.8 m square, above the play surface) from 'Site ground'."""
+    import bmesh
+    import bpy
+    ob = bpy.data.objects.get('Site ground')
+    if ob is None:
+        return 0
+    M = ob.matrix_world
+    bm = bmesh.new()
+    bm.from_mesh(ob.data)
+    kill = []
+    for f in bm.faces:
+        co = [M @ v.co for v in f.verts]
+        if max(c.z for c in co) <= 0.2:
             continue
-        pa = (x + P[a][0] * r, y + P[a][1] * r, z + max(P[a][2], 0.0) * r * stretch)
-        pb = (x + P[b][0] * r, y + P[b][1] * r, z + max(P[b][2], 0.0) * r * stretch)
-        rod(mb, pa, pb, 0.05, mat, sides=4)
-    # hubs at the nodes
-    for p in P:
-        if p[2] >= -0.02:
-            c = (x + p[0] * r, y + p[1] * r, z + max(p[2], 0.0) * r * stretch)
-            mb.box(c[0], c[1], c[2] - 0.06, 0.13, 0.13, 0.12, mat)
+        for cx, cy in SITE_TOWERS_ON_BLUE:
+            if all(abs(c.x - cx) <= half and abs(c.y - cy) <= half for c in co):
+                kill.append(f)
+                break
+    if kill:
+        bmesh.ops.delete(bm, geom=kill, context='FACES')
+        bm.to_mesh(ob.data)
+        ob.data.update()
+    bm.free()
+    return len(kill)
+
+
+def strut(mb, p0, p1, r, mat, sides=4):
+    """Open prism between two 3D points (no end caps: they meet at nodes)."""
+    p0, p1 = np.array(p0, float), np.array(p1, float)
+    d = p1 - p0
+    L = np.linalg.norm(d)
+    if L < 1e-6:
+        return
+    d /= L
+    a = np.array([0, 0, 1.0]) if abs(d[2]) < 0.9 else np.array([1.0, 0, 0])
+    u = np.cross(d, a)
+    u /= np.linalg.norm(u)
+    v = np.cross(d, u)
+    ring = [(math.cos(2 * math.pi * (k + 0.5) / sides), math.sin(2 * math.pi * (k + 0.5) / sides)) for k in range(sides)]
+    b0 = [tuple(p0 + r * (c * u + s * v)) for c, s in ring]
+    b1 = [tuple(p1 + r * (c * u + s * v)) for c, s in ring]
+    for k in range(sides):
+        j = (k + 1) % sides
+        mb.face([b0[k], b0[j], b1[j], b1[k]], mat)
+
+
+def tri_lattice(a, b, c, n):
+    """Edges of triangle abc split into n x n small triangles (3 directions of struts)."""
+    a, b, c = (np.array(x, float) for x in (a, b, c))
+    P = {}
+    for i in range(n + 1):
+        for j in range(n + 1 - i):
+            P[i, j] = a + (b - a) * (i / n) + (c - a) * (j / n)
+    E = []
+    for (i, j), p in P.items():
+        for di, dj in ((1, 0), (0, 1), (-1, 1)):
+            q = P.get((i + di, j + dj))
+            if q is not None:
+                E.append((p, q))
+    return E
+
+
+def pavilion(mb, x, y, z, mat='Dark lattice'):
+    """Hexagonal climbing pavilion as on the render: six legs splay out from a ground hexagon to a
+    ring beam, a six-sided pyramid roof rises to the apex, and every wall and roof face is filled
+    with a triangular lattice; one wall is open below 2 m as the way in."""
+    ang = [math.radians(30 + 60 * k) for k in range(6)]
+    G = [np.array([x + PAV_R0 * math.cos(a), y + PAV_R0 * math.sin(a), z]) for a in ang]
+    R = [np.array([x + PAV_R1 * math.cos(a), y + PAV_R1 * math.sin(a), z + PAV_H1]) for a in ang]
+    A = np.array([x, y, z + PAV_H2])
+    heavy = []
+    for k in range(6):
+        heavy += [(G[k], R[k]), (R[k], R[(k + 1) % 6]), (R[k], A)]
+    edges = []
+    door = 0                                   # the wall facing north-east (towards the play tower)
+    for k in range(6):
+        g0, g1, r0, r1 = G[k], G[(k + 1) % 6], R[k], R[(k + 1) % 6]
+        if k == door:
+            f = 2.0 / PAV_H1
+            g0, g1 = g0 + (r0 - g0) * f, g1 + (r1 - g1) * f
+            heavy.append((g0, g1))
+            edges += tri_lattice(g0, g1, r1, 2) + tri_lattice(g0, r1, r0, 2)
+        else:
+            edges += tri_lattice(g0, g1, r1, 3) + tri_lattice(g0, r1, r0, 3)
+        edges += tri_lattice(r0, r1, A, 4)
+    seen = set()
+
+    def key(p, q):
+        a, b = tuple(np.round(p, 3)), tuple(np.round(q, 3))
+        return (a, b) if a <= b else (b, a)
+    for p, q in heavy:
+        seen.add(key(p, q))
+        strut(mb, p, q, 0.09, mat, sides=6)
+    for p, q in edges:
+        k = key(p, q)
+        if k in seen:
+            continue
+        seen.add(k)
+        # skip pieces lying on a heavy member (subdivided legs / ring / hips)
+        on_heavy = False
+        for h0, h1 in heavy:
+            d = h1 - h0
+            L2 = float(d @ d)
+            t0 = float((p - h0) @ d) / L2
+            t1 = float((q - h0) @ d) / L2
+            if -1e-6 <= t0 <= 1 + 1e-6 and -1e-6 <= t1 <= 1 + 1e-6 and \
+                    np.linalg.norm(h0 + d * t0 - p) < 1e-3 and np.linalg.norm(h0 + d * t1 - q) < 1e-3:
+                on_heavy = True
+                break
+        if not on_heavy:
+            strut(mb, p, q, 0.055, mat)
+    # feet and apex cap
+    for g in G:
+        mb.box(g[0], g[1], z, 0.28, 0.28, 0.12, mat)
+    mb.blob(A[0], A[1], A[2] + 0.05, 0.16, 0.16, 0.16, mat, subdiv=1)
 
 
 def play_tower(mb, x, y, rot, z):

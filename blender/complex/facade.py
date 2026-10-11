@@ -4,19 +4,24 @@ Drop-in for podium.shop_front(mb, a, b, signs): one call per segment a->b of the
 edge (outward normal to the right of a->b). The section, with d = metres out from the podium
 outline and z = height above the street:
 
-    0.0 - 5.3    shops: glazing set back 0.35 m between light stone piers (every ~12 m, 0.85 m deep),
-                 dark frames (sill, mullions every ~1.75 m, transom), a shop sign in every bay
+    0.0 - 5.3    shops: light glazing set back 0.35 m between light stone piers (every ~12.5 m,
+                 0.85 m deep), dark frames (sill, mullions every ~1.75 m, transom), a shop sign per bay
     5.3 - 6.5    thick white slab band with rounded nose, 0.8 m proud of the outline
-    6.5 - 10.0   glazed gallery: dark mullions every ~2 m and a low transom, stone panels over the piers
+    6.5 - 10.0   glazed gallery: dark mullions every ~1.9 m and a low transom, stone panels over the piers
     10.0 - 10.97 white rounded band, 0.8 m proud
-    10.97 - 14.25 perforated copper screen: 1.5 m panels set as a sawtooth (0.12 - 0.5 m proud),
+    10.97 - 14.25 perforated copper screen: 1.5 m panels folded as a sawtooth (0.04 - 0.5 m proud), the
+                 bottom edge cut up towards the folds so the ridges hang down as tips over the white band,
                  dark joints in the folds, white brand logos standing in front of the ridges
     (white rounded parapet and glass rail on top of the +15.0 deck: deck/edge.py)
 
-Joints between segments are mitred with the neighbouring segments of podium.OUTER, so the bands
-run round the curve without gaps; the bands are capped where the shop front meets the land side.
-The logos and shop names are baked as low-resolution text meshes into the podium mesh (the
-default text resolution would cost 1-4k triangles per logo), so `signs` is left for other callers.
+Everything that repeats along the front (piers, shop bays, mullions, copper panels, logos) is laid
+out by arc length along the whole outer line from the hotel end, not per segment, so the rhythm is
+the same however finely podium.OUTER is sampled (a smooth, densely sampled curve works as well as
+the 14-point polyline). Joints between segments are mitred with the neighbouring segments of
+podium.OUTER, so the bands run round the curve without gaps; the bands are capped where the shop
+front meets the land side. The logos and shop names are baked as low-resolution text meshes into
+the podium mesh (the default text resolution would cost 1-4k triangles per logo), so `signs` is
+left for other callers.
 """
 import math
 
@@ -30,11 +35,14 @@ GF_GLASS = -0.35   # shop glazing line (behind the piers)
 GF_Z1 = 5.3        # underside of the white slab band
 L2_Z0, L2_Z1 = 6.5, 10.0
 CU_Z0, CU_Z1 = 10.97, 14.25
-CU_VALLEY, CU_RIDGE = 0.12, 0.5
+CU_VALLEY, CU_RIDGE = 0.04, 0.5
+CU_TIP = 0.28      # the copper's bottom edge rises this much from the ridges to the valleys
 CU_PANEL = 1.5
-PIER_STEP = 12.0
+PIER_STEP = 12.5
 PIER_W, PIER_D0, PIER_D1 = 1.25, GF_GLASS, 0.5
 PIER_MAT = 'Kerb'  # light warm grey stone, as the piers on the render
+GF_MULLION = 1.75  # shop glazing module
+L2_MULLION = 1.9   # gallery glazing module
 
 # rounded band sections (d, z), counter-clockwise: soffit outwards, up the nose, back over the top
 GF_BAND = [(GF_GLASS, GF_Z1), (0.50, GF_Z1), (0.65, 5.33), (0.74, 5.43), (0.79, 5.6), (0.79, 6.2), (0.74, 6.37),
@@ -50,13 +58,15 @@ LOGO_STEP = 13.5
 LOGO_STYLE = {'MEXX': (3.0, 1.55), 'MOSCHINO': (3.8, 1.3), 'asics': (2.5, 1.7), 'adidas': (2.6, 1.35),
               'ChristianDior': (5.4, 1.45), 'LC WAIKIKI': (4.6, 1.4), 'Columbia': (3.6, 1.35), "Levi's": (2.6, 1.4),
               'ecco': (2.2, 1.9), 'Bershka': (3.4, 1.4)}
+LOGO_MAT = {'LC WAIKIKI': 'Sign blue'}        # LC Waikiki is the one blue logo on the band
 LOGO_FIRST = 9.0
 SHOPS = [('LC WAIKIKI', 'Play blue'), ('Columbia', None), ('KFC', 'Car red'), ('Bershka', None), ('ecco', 'Stained blue'),
          ("Levi's", 'Car red'), ('MANGO', None), ('DeFacto', 'Stained blue'), ('Koton', None), ('Mavi', 'Play blue')]
+EPS = 1e-6
 
 
 # ----------------------------------------------------------------------------------------------
-# segment frame (mitred with the neighbouring segments of the outer edge)
+# the outer line and the layout along it (arc length from the hotel end)
 # ----------------------------------------------------------------------------------------------
 
 def _outer():
@@ -64,9 +74,51 @@ def _outer():
     return OUTER
 
 
+_CACHE = {}
+
+
+def layout():
+    """Positions (arc length from the hotel end) of everything that repeats along the shop front,
+    cached per outline."""
+    key = tuple((float(x), float(y)) for x, y in _outer())
+    if key in _CACHE:
+        return _CACHE[key]
+    from shapely.geometry import LineString
+    line = LineString(key)
+    Lt = line.length
+    n = max(1, int(round(Lt / PIER_STEP)))
+    piers = [Lt * i / n for i in range(n + 1)]
+    gf, l2 = [], []
+    for p0, p1 in zip(piers[:-1], piers[1:]):
+        span = p1 - p0 - PIER_W
+        m = max(1, int(round(span / GF_MULLION)))
+        gf += [(p0 + PIER_W / 2 + span * j / m, 0.16 if j in (0, m) else 0.08) for j in range(m + 1)]
+        m2 = max(1, int(round(span / L2_MULLION)))
+        l2 += [p0 + PIER_W / 2 + span * j / m2 for j in range(1, m2)]
+    nc = max(1, int(round(Lt / CU_PANEL)))
+    joints = [Lt * j / nc for j in range(nc + 1)]
+    logos = []
+    k = 0
+    while LOGO_FIRST + LOGO_STEP * k < Lt - 4.0:
+        s = LOGO_FIRST + LOGO_STEP * k
+        j = min(range(1, nc), key=lambda i: abs(joints[i] - s)) if nc > 1 else 0
+        logos.append((joints[j], LOGOS[k % len(LOGOS)]))      # centred on a ridge
+        k += 1
+    O = np.array(key)
+    _CACHE[key] = dict(line=line, L=Lt, O=O, piers=piers, bays=list(zip(piers[:-1], piers[1:])), gf=gf, l2=l2,
+                       joints=joints, logos=logos)
+    return _CACHE[key]
+
+
+def arc_from_hotel(p):
+    from shapely.geometry import Point
+    lay = layout()
+    return lay['L'] - lay['line'].project(Point(float(p[0]), float(p[1])))
+
+
 def _vertex(p):
     """(offset direction, is end of the shop front) at an outline vertex p."""
-    O = np.array(_outer(), float)
+    O = layout()['O']
     dist = np.linalg.norm(O - p, axis=1)
     i = int(np.argmin(dist))
     if dist[i] > 0.05:
@@ -83,12 +135,6 @@ def _vertex(p):
     return m / max(float(m @ n1), 0.5), False
 
 
-def _arc_from_hotel(p):
-    from shapely.geometry import LineString, Point
-    line = LineString(_outer())
-    return line.length - line.project(Point(float(p[0]), float(p[1])))
-
-
 class Seg:
     def __init__(self, a, b):
         self.a, self.b = np.array(a, float), np.array(b, float)
@@ -100,6 +146,11 @@ class Seg:
         mb, self.b_end = _vertex(self.b)
         self.ma = self.n if ma is None else ma
         self.mb = self.n if mb is None else mb
+        # arc length from the hotel end at both ends; u = sgn * (s - s_a)
+        self.sa, self.sb = arc_from_hotel(self.a), arc_from_hotel(self.b)
+        self.sgn = 1.0 if self.sb >= self.sa else -1.0
+        self.lo, self.hi = min(self.sa, self.sb), max(self.sa, self.sb)
+        self.last = abs(self.hi - layout()['L']) < 1e-3
 
     def p(self, u, d):
         """2D point u metres along the segment, d metres out (exact mitres at both ends)."""
@@ -109,6 +160,21 @@ class Seg:
     def p3(self, u, d, z):
         q = self.p(u, d)
         return (float(q[0]), float(q[1]), float(z))
+
+    def q(self, u, d):
+        """Point on the segment's own plane (no mitres; u may run past the ends)."""
+        return self.a + self.t * u + self.n * d
+
+    def u(self, s):
+        return self.sgn * (s - self.sa)
+
+    def owns(self, s):
+        """Is arc position s on this segment (half-open, so shared vertices are counted once)?"""
+        return self.lo - EPS <= s < self.hi - EPS or (self.last and abs(s - self.hi) <= 1e-3)
+
+    def along(self):
+        """Unit vector in the direction of growing arc length."""
+        return self.t * self.sgn
 
 
 # ----------------------------------------------------------------------------------------------
@@ -122,10 +188,11 @@ def _newell(pts):
     return n
 
 
-def _face_toward(mb, pts, want, mat):
+def _face_toward(mb, pts, want, mat, uv=None):
     if _newell(pts) @ np.array(want, float) < 0:
         pts = pts[::-1]
-    mb.face(pts, mat)
+        uv = uv[::-1] if uv else None
+    mb.face(pts, mat, uv=uv)
 
 
 def sweep(mb, s, prof, mat):
@@ -196,16 +263,21 @@ def text_width(text, size):
 
 
 def put_text(mb, s, u, d, z, text, size, mat='Sign', bold=0.0, sx=1.0, sy=1.0):
-    """Text standing on the facade plane, centred at (u, d, z), facing out, stretched by sx / sy.
+    """Text standing on the segment's plane, centred at (u, d, z), facing out, stretched by sx / sy.
     bold > 0 adds two copies shifted sideways by that much (heavier strokes, as the logos)."""
     verts, polys, _ = _text_geo(text, size)
     t, n = s.t, s.n
     for du, dd in ([(0.0, 0.0)] + ([(-bold, 0.004), (bold, 0.004)] if bold > 0 else [])):
-        q = s.p(u + du, d + dd)
+        q = s.q(u + du, d + dd)
         W = [(float(q[0] + t[0] * x * sx + n[0] * zz), float(q[1] + t[1] * x * sx + n[1] * zz), float(z + y * sy))
              for x, y, zz in verts]
         for poly in polys:
             mb.face([W[i] for i in poly], mat)
+
+
+def _q3(s, u, d, z):
+    q = s.q(u, d)
+    return (float(q[0]), float(q[1]), float(z))
 
 
 def adidas_mark(mb, s, u, d, z, h, mat='Sign'):
@@ -214,8 +286,17 @@ def adidas_mark(mb, s, u, d, z, h, mat='Sign'):
         u0 = u + (k - 1) * h * 0.42
         top, bot = z + h * hh * 0.9, z
         lean = h * 0.32 * hh
-        pts = [s.p3(u0 - h * 0.15, d, bot), s.p3(u0 + h * 0.15, d, bot), s.p3(u0 + h * 0.15 + lean, d, top),
-               s.p3(u0 - h * 0.15 + lean, d, top)]
+        pts = [_q3(s, u0 - h * 0.15, d, bot), _q3(s, u0 + h * 0.15, d, bot), _q3(s, u0 + h * 0.15 + lean, d, top),
+               _q3(s, u0 - h * 0.15 + lean, d, top)]
+        mb.face(pts, mat)
+
+
+def asics_mark(mb, s, u, d, z, h, mat='Sign'):
+    """The asics stripes: three swept bars rising to the right, left of the word."""
+    for k in range(3):
+        y0 = z - h * 0.42 + k * h * 0.3
+        pts = [_q3(s, u - h * 0.55, d, y0), _q3(s, u + h * 0.45, d, y0 + h * 0.32),
+               _q3(s, u + h * 0.45, d, y0 + h * 0.46), _q3(s, u - h * 0.55, d, y0 + h * 0.13)]
         mb.face(pts, mat)
 
 
@@ -223,52 +304,7 @@ def adidas_mark(mb, s, u, d, z, h, mat='Sign'):
 # the shop front
 # ----------------------------------------------------------------------------------------------
 
-def pier_positions(s):
-    k = max(1, int(round(s.L / PIER_STEP)))
-    us = [s.L * i / k for i in range(k)]
-    if s.b_end:
-        us.append(s.L)
-    return us
-
-
 FRAME = 'Shop frame'
-
-
-def ground_floor(mb, s, piers):
-    wall(mb, s, GF_GLASS, 0.0, GF_Z1, 'Shop glass')
-    rail(mb, s, GF_GLASS + 0.05, 0.0, 0.32, 0.14, FRAME)         # sill
-    rail(mb, s, GF_GLASS + 0.05, 4.5, 4.6, 0.12, FRAME)          # transom (shop signs below it)
-    rail(mb, s, GF_GLASS + 0.05, GF_Z1 - 0.1, GF_Z1, 0.12, FRAME)
-    for u in piers:
-        post(mb, s, u, (PIER_D0 + PIER_D1) / 2, 0.0, GF_Z1, PIER_W, PIER_D1 - PIER_D0, PIER_MAT)
-        post(mb, s, u, PIER_D1 + 0.02, 0.0, 0.25, PIER_W + 0.1, 0.06, FRAME)   # dark plinth
-    bays = list(zip(piers, piers[1:] + ([] if s.b_end else [s.L])))
-    for u0, u1 in bays:
-        span = u1 - u0 - PIER_W
-        if span < 1.0:
-            continue
-        m = max(1, int(round(span / 1.75)))
-        for j in range(m + 1):
-            u = u0 + PIER_W / 2 + span * j / m
-            w = 0.16 if j in (0, m) else 0.08                            # heavier frame at the piers
-            post(mb, s, u, GF_GLASS + 0.05, 0.3, GF_Z1, w, 0.12, FRAME)
-        shop_sign(mb, s, (u0 + u1) / 2, span)
-
-
-def shop_sign(mb, s, u, span):
-    k = int(_arc_from_hotel(s.p(u, 0)) // 9.5)
-    text, box_mat = SHOPS[k % len(SHOPS)]
-    size = 0.95
-    w = min(text_width(text, size), span - 1.0)
-    if w <= 0.5:
-        return
-    z, d = 4.05, GF_GLASS + 0.14
-    if box_mat:
-        q = s.p(u - span * 0.18, d)
-        mb.box(float(q[0]), float(q[1]), z - 0.36, w + 0.7, 0.12, 0.72, box_mat, rot=s.rot)
-        put_text(mb, s, u - span * 0.18, d + 0.07, z, text, size)
-    else:
-        put_text(mb, s, u, d, z, text, size)
 
 
 def _mat(name, fallback):
@@ -279,65 +315,115 @@ def _mat(name, fallback):
         return fallback
 
 
-def gallery(mb, s, piers):
+def ground_floor(mb, s, lay):
+    wall(mb, s, GF_GLASS, 0.0, GF_Z1, _mat('Shop window', 'Shop glass'))
+    rail(mb, s, GF_GLASS + 0.05, 0.0, 0.32, 0.14, FRAME)         # sill
+    rail(mb, s, GF_GLASS + 0.05, 4.5, 4.6, 0.12, FRAME)          # transom (shop signs below it)
+    rail(mb, s, GF_GLASS + 0.05, GF_Z1 - 0.1, GF_Z1, 0.12, FRAME)
+    for sp in lay['piers']:
+        if s.owns(sp):
+            u = s.u(sp)
+            post(mb, s, u, (PIER_D0 + PIER_D1) / 2, 0.0, GF_Z1, PIER_W, PIER_D1 - PIER_D0, PIER_MAT)
+            post(mb, s, u, PIER_D1 + 0.02, 0.0, 0.25, PIER_W + 0.1, 0.06, FRAME)   # dark plinth
+    for sm, w in lay['gf']:
+        if s.owns(sm):
+            post(mb, s, s.u(sm), GF_GLASS + 0.05, 0.3, GF_Z1, w, 0.12, FRAME)  # heavier frame at the piers
+    for k, (p0, p1) in enumerate(lay['bays']):
+        mid = (p0 + p1) / 2
+        if s.owns(mid):
+            shop_sign(mb, s, s.u(mid), p1 - p0 - PIER_W, k)
+
+
+def shop_sign(mb, s, u, span, k):
+    text, box_mat = SHOPS[k % len(SHOPS)]
+    size = 0.95
+    w = min(text_width(text, size), span - 1.0)
+    if w <= 0.5:
+        return
+    z, d = 4.05, GF_GLASS + 0.14
+    if box_mat:
+        uu = u - s.sgn * span * 0.18          # towards the hotel end of the bay
+        q = s.q(uu, d)
+        mb.box(float(q[0]), float(q[1]), z - 0.36, w + 0.7, 0.12, 0.72, box_mat, rot=s.rot)
+        put_text(mb, s, uu, d + 0.07, z, text, size)
+    else:
+        put_text(mb, s, u, d, z, text, size)
+
+
+def gallery(mb, s, lay):
     wall(mb, s, 0.0, L2_Z0, L2_Z1, _mat('Gallery glass', 'Shop glass'))
     rail(mb, s, 0.05, L2_Z0, L2_Z0 + 0.12, 0.1, FRAME)
     rail(mb, s, 0.05, 7.12, 7.2, 0.08, FRAME)
     rail(mb, s, 0.05, L2_Z1 - 0.1, L2_Z1, 0.1, FRAME)
-    k = max(1, int(round(s.L / 2.0)))
-    for j in range(k):
-        u = s.L * j / k
-        if min(abs(u - p) for p in piers) < PIER_W * 0.75:
-            continue
-        post(mb, s, u, 0.05, L2_Z0, L2_Z1, 0.07, 0.1, FRAME)
-    for u in piers:  # stone panels over the piers
-        post(mb, s, u, 0.12, L2_Z0, L2_Z1, PIER_W, 0.24, PIER_MAT)
+    for sm in lay['l2']:
+        if s.owns(sm):
+            post(mb, s, s.u(sm), 0.05, L2_Z0, L2_Z1, 0.07, 0.1, FRAME)
+    for sp in lay['piers']:   # stone panels over the piers
+        if s.owns(sp):
+            post(mb, s, s.u(sp), 0.12, L2_Z0, L2_Z1, PIER_W, 0.24, PIER_MAT)
 
 
-def copper(mb, s):
-    """Perforated copper panels set as a sawtooth: each 1.5 m panel turns out from the valley
-    (0.12 m) to the ridge (0.5 m), a short return closes it with a dark joint in the valley, so the
-    band reads as a row of lit panels with dark folds and saw-toothed shadows on the band below."""
+def _cu_d(f):
+    """Copper sheet offset at fraction f across a panel (valley at the start, ridge at the end)."""
+    return CU_VALLEY + (CU_RIDGE - CU_VALLEY) * f
+
+
+def _cu_bottom(d):
+    """Bottom edge of the copper: on the band at the ridge, cut up towards the valley."""
+    return CU_Z0 + CU_TIP * (CU_RIDGE - d) / (CU_RIDGE - CU_VALLEY)
+
+
+def copper(mb, s, lay):
+    """Perforated copper panels folded as a sawtooth: each 1.5 m panel turns out from the valley to
+    the ridge and a short return closes it with a dark joint in the valley, so the band reads as a
+    row of lit panels with dark folds. The bottom edge rises from each ridge to the next valley,
+    so the folds hang down as tips over the white band, as on the render. UVs are metres (u centred
+    on the panel, v = height) for the perforation / joint pattern of the material."""
     wall(mb, s, 0.0, CU_Z0, DECK_E - 0.6, 'Terracotta dark')
-    n = max(1, int(round(s.L / CU_PANEL)))
-    w = s.L / n
-    for j in range(n):
-        u0, u1 = w * j, w * (j + 1)
-        P0, P1, P2 = s.p(u0, CU_VALLEY), s.p(u1, CU_RIDGE), s.p(u1, CU_VALLEY)
-        pw = float(np.linalg.norm(P1 - P0))
-        mb.face([(P0[0], P0[1], CU_Z0), (P1[0], P1[1], CU_Z0), (P1[0], P1[1], CU_Z1), (P0[0], P0[1], CU_Z1)],
-                'Copper screen', uv=[(0, CU_Z0), (pw, CU_Z0), (pw, CU_Z1), (0, CU_Z1)])
-        rw = CU_RIDGE - CU_VALLEY
-        mb.face([(P1[0], P1[1], CU_Z0), (P2[0], P2[1], CU_Z0), (P2[0], P2[1], CU_Z1), (P1[0], P1[1], CU_Z1)],
-                'Copper screen', uv=[(0, CU_Z0), (rw, CU_Z0), (rw, CU_Z1), (0, CU_Z1)])
-        post(mb, s, u1, CU_VALLEY + 0.03, CU_Z0, CU_Z1, 0.08, 0.06, 'Terracotta dark')   # joint in the fold
+    J = lay['joints']
+    along = s.along()
+    for c0, c1 in zip(J[:-1], J[1:]):
+        a0, a1 = max(c0, s.lo), min(c1, s.hi)
+        if a1 - a0 > 1e-4:
+            f0, f1 = (a0 - c0) / (c1 - c0), (a1 - c0) / (c1 - c0)
+            pw = math.hypot(c1 - c0, CU_RIDGE - CU_VALLEY)
+            ends = sorted([(s.u(a0), _cu_d(f0), (f0 - 0.5) * pw), (s.u(a1), _cu_d(f1), (f1 - 0.5) * pw)])
+            (uA, dA, tA), (uB, dB, tB) = ends
+            A, B = s.p(uA, dA), s.p(uB, dB)
+            zA, zB = _cu_bottom(dA), _cu_bottom(dB)
+            mb.face([(A[0], A[1], zA), (B[0], B[1], zB), (B[0], B[1], CU_Z1), (A[0], A[1], CU_Z1)],
+                    'Copper screen', uv=[(tA, zA), (tB, zB), (tB, CU_Z1), (tA, CU_Z1)])
+        if s.owns(c1):
+            u1 = s.u(c1)
+            P1, P2 = s.p(u1, CU_RIDGE), s.p(u1, CU_VALLEY)
+            z1, z2 = _cu_bottom(CU_RIDGE), _cu_bottom(CU_VALLEY)
+            rw = CU_RIDGE - CU_VALLEY
+            _face_toward(mb, [(P1[0], P1[1], z1), (P2[0], P2[1], z2), (P2[0], P2[1], CU_Z1), (P1[0], P1[1], CU_Z1)],
+                         (along[0], along[1], 0.0), 'Copper screen',
+                         uv=[(5.0, z1), (5.0 + rw, z2), (5.0 + rw, CU_Z1), (5.0, CU_Z1)])
+            post(mb, s, u1, CU_VALLEY + 0.03, z2, CU_Z1, 0.08, 0.06, 'Terracotta dark')   # joint in the fold
     # top edge trim tucked under the parapet
     rail(mb, s, 0.25, CU_Z1 - 0.06, CU_Z1 + 0.02, 0.5, 'Terracotta dark')
-    return n, w
 
 
-def logos(mb, s, n, w):
-    s0 = _arc_from_hotel(s.a)
-    s1 = _arc_from_hotel(s.b)
-    lo, hi = min(s0, s1), max(s0, s1)
-    k0 = int(math.ceil((lo - LOGO_FIRST) / LOGO_STEP))
-    k1 = int(math.floor((hi - LOGO_FIRST) / LOGO_STEP))
-    for k in range(max(0, k0), k1 + 1):
-        text = LOGOS[k % len(LOGOS)]
+def logos(mb, s, lay):
+    for sk, text in lay['logos']:
+        if not s.owns(sk):
+            continue
         tw, sy = LOGO_STYLE.get(text, (min(4.0, text_width(text, 1.0) * 1.1), 1.4))
         sx = tw / max(text_width(text, 1.0), 0.1)
-        sk = LOGO_FIRST + LOGO_STEP * k
-        u = (sk - s0) if s0 < s1 else (s0 - sk)
-        if tw + 1.0 > s.L:
-            continue
-        u = min(max(u, tw / 2 + 0.5), s.L - tw / 2 - 0.5)
-        u = min(max(w * round(u / w), tw / 2 + 0.5), s.L - tw / 2 - 0.5)    # centred on a ridge
-        z = (CU_Z0 + CU_Z1) / 2 - 0.1
+        u = s.u(sk)
+        z = (CU_Z0 + CU_Z1) / 2 - 0.05
+        d = CU_RIDGE + 0.06
+        mat = _mat(LOGO_MAT.get(text, 'Sign'), 'Sign')
         if text == 'adidas':
-            put_text(mb, s, u, CU_RIDGE + 0.06, z - 0.62, text, 1.0, bold=0.025, sx=sx, sy=sy)
-            adidas_mark(mb, s, u, CU_RIDGE + 0.06, z - 0.1, 1.25)
+            put_text(mb, s, u, d, z - 0.62, text, 1.0, mat=mat, bold=0.025, sx=sx, sy=sy)
+            adidas_mark(mb, s, u, d, z - 0.1, 1.25, mat=mat)
+        elif text == 'asics':
+            put_text(mb, s, u + 0.55, d, z, text, 1.0, mat=mat, bold=0.03, sx=sx, sy=sy)
+            asics_mark(mb, s, u - tw / 2 - 0.1, d, z, 0.9, mat=mat)
         else:
-            put_text(mb, s, u, CU_RIDGE + 0.06, z, text, 1.0, bold=0.03, sx=sx, sy=sy)
+            put_text(mb, s, u, d, z, text, 1.0, mat=mat, bold=0.03, sx=sx, sy=sy)
 
 
 def shop_front(mb, a, b, signs):
@@ -347,17 +433,17 @@ def shop_front(mb, a, b, signs):
     from .geom import MeshBuilder
     try:
         FRAME = _mat('Shop frame', 'Car dark')
-        s = Seg(a, b)
-        if s.L < 0.05:
+        if float(np.linalg.norm(np.array(b, float) - np.array(a, float))) < 0.05:
             return
+        lay = layout()
+        s = Seg(a, b)
         part = MeshBuilder()
-        piers = pier_positions(s)
-        ground_floor(part, s, piers)
+        ground_floor(part, s, lay)
         sweep(part, s, GF_BAND, 'White band')
-        gallery(part, s, piers)
+        gallery(part, s, lay)
         sweep(part, s, L2_BAND, 'White band')
-        n, w = copper(part, s)
-        logos(part, s, n, w)
+        copper(part, s, lay)
+        logos(part, s, lay)
     except Exception:
         import traceback
         print('[facade] shop_front: failed, using the plain shop front for this segment')

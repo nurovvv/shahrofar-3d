@@ -73,11 +73,13 @@ SPECS = {
     'Fitness yellow': ('#e0bd35', 0.5, 0.3, {}),
     'Planter': ('#d7d2c8', 0.8, 0.0, {}),         # light concrete planter walls
     'Bollard': ('#f1f0eb', 0.5, 0.0, {}),
-    'Promenade': ('#d6cdc2', 0.85, 0.0, {}),      # light street paving
+    'Promenade': ('#bfaa9c', 0.85, 0.0, {}),      # warm pinkish-beige street paving (renders ~#cbbbb3 in sun)
     'Shop frame': ('#2c3034', 0.4, 0.5, {}),      # dark mullions / transoms of the shop front
-    'Gallery glass': ('#dde3e1', 0.12, 0.0, {'specular': 0.5}),   # light glazing of the shop front's 2nd level
+    'Gallery glass': ('#eef1f0', 0.12, 0.0, {'specular': 0.5}),   # light glazing of the shop front's 2nd level
     'Umbrella sand': ('#c88b51', 0.8, 0.0, {}),   # light ochre canvas of the pool's sail umbrellas (renders ~#d9a067 sunlit)
     'Cobble joint': ('#8e8a86', 0.9, 0.0, {}),    # mid-grey joints between the playground cobbles
+    'Shop window': ('#bcc6c2', 0.12, 0.0, {'specular': 0.4}),   # light grey-green shop glazing (ground floor)
+    'Sign blue': ('#3d8fe8', 0.4, 0.0, {'emission': ('#3a8cff', 0.5)}),   # LC Waikiki logo on the copper band
 }
 
 
@@ -124,9 +126,9 @@ def perforated_copper(m):
     bsdf = nt.nodes.get('Principled BSDF')
     out = nt.nodes.get('Material Output')
     N = nt.nodes.new
-    bsdf.inputs['Base Color'].default_value = (*srgb('#e9b399'), 1.0)   # light, pinkish copper sheet
-    bsdf.inputs['Metallic'].default_value = 0.15
-    bsdf.inputs['Roughness'].default_value = 0.5
+    bsdf.inputs['Base Color'].default_value = (*srgb('#ffd4be'), 1.0)   # light, pinkish copper sheet
+    bsdf.inputs['Metallic'].default_value = 0.05
+    bsdf.inputs['Roughness'].default_value = 0.55
     m.diffuse_color = (*srgb('#d29f86'), 1.0)
     tc = N('ShaderNodeTexCoord')
     vor = N('ShaderNodeTexVoronoi')            # regular grid of dots (randomness 0), ~0.11 m apart
@@ -139,11 +141,11 @@ def perforated_copper(m):
     rad.inputs['From Min'].default_value = 0.38
     rad.inputs['From Max'].default_value = 0.62
     rad.inputs['To Min'].default_value = 0.04
-    rad.inputs['To Max'].default_value = 0.46
+    rad.inputs['To Max'].default_value = 0.42
     dots = N('ShaderNodeMath')
     dots.operation = 'LESS_THAN'
     hole = N('ShaderNodeBsdfDiffuse')          # dark cavity behind the holes
-    hole.inputs['Color'].default_value = (*srgb('#8e5440'), 1.0)
+    hole.inputs['Color'].default_value = (*srgb('#c4907a'), 1.0)
     mix = N('ShaderNodeMixShader')
     mix.name = 'Perforation'
     L = nt.links.new
@@ -155,4 +157,53 @@ def perforated_copper(m):
     L(dots.outputs['Value'], mix.inputs['Fac'])
     L(bsdf.outputs['BSDF'], mix.inputs[1])
     L(hole.outputs['BSDF'], mix.inputs[2])
+    L(mix.outputs['Shader'], out.inputs['Surface'])
+    try:
+        panel_joints(m, tc, mix)
+    except Exception:  # dots only
+        pass
+
+
+def panel_joints(m, tc, sheet):
+    """Dark dashed lines on every copper panel (two rows across, one down each side), as the
+    joints / fixings of the screen on the render. The facade gives the panels UVs in metres:
+    u centred on the panel (return faces sit at u >= 5), v = height above the street."""
+    nt = m.node_tree
+    N, L = nt.nodes.new, nt.links.new
+    out = nt.nodes.get('Material Output')
+    sep = N('ShaderNodeSeparateXYZ')
+    L(tc.outputs['UV'], sep.inputs[0])
+
+    def op(kind, a, b=None):
+        n = N('ShaderNodeMath')
+        n.operation = kind
+        for i, x in enumerate((a, b)):
+            if x is None:
+                continue
+            if isinstance(x, (int, float)):
+                n.inputs[i].default_value = x
+            else:
+                L(x, n.inputs[i])
+        return n.outputs[0]
+
+    u, v = sep.outputs['X'], sep.outputs['Y']
+    H1, H2, UX, W, P = 13.8, 11.6, 0.6, 0.035, 0.17     # rows, side lines, half width, dash period
+
+    def line(x, at):
+        return op('LESS_THAN', op('ABSOLUTE', op('SUBTRACT', x, at)), W)
+
+    def dashes(x):
+        return op('LESS_THAN', op('FRACT', op('DIVIDE', x, P)), 0.55)
+
+    rows = op('MULTIPLY', op('MAXIMUM', line(v, H1), line(v, H2)), dashes(u))
+    side = op('MULTIPLY', line(op('ABSOLUTE', u), UX), dashes(v))
+    side = op('MULTIPLY', side, op('MULTIPLY', op('GREATER_THAN', v, H2 - W), op('LESS_THAN', v, H1 + W)))
+    dash = op('MAXIMUM', rows, side)
+    dark = N('ShaderNodeBsdfDiffuse')
+    dark.inputs['Color'].default_value = (*srgb('#6e4232'), 1.0)
+    mix = N('ShaderNodeMixShader')
+    mix.name = 'Panel joints'
+    L(dash, mix.inputs['Fac'])
+    L(sheet.outputs['Shader'], mix.inputs[1])
+    L(dark.outputs['BSDF'], mix.inputs[2])
     L(mix.outputs['Shader'], out.inputs['Surface'])

@@ -5,6 +5,11 @@ Grey irregular cobble paving; light-timber geodesic lattice pergolas over round 
 round seat; a timber play frame with a swing pair and a climbing net; a low rope climbing dome;
 outdoor fitness bars (green and yellow); hexagonal stools; benches; round planters with grass and
 trees, one big tree; swan-neck lamps. The west roof adds a play tower with a slide.
+
+The cobble (fine stones on mid-grey joints) also paves the apron under the balconies of blocks B
+and V, so it runs right up to their ground-floor glass; along the play side of the diagonal planter
+a planted margin (lawn, shrubs, columnar trees, a clipped hedge on the cobble side) widens the strip
+into one broad green band.
 """
 import math
 import random
