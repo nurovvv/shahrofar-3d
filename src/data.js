@@ -14,6 +14,10 @@ function mulberry32(a) {
 }
 
 const rand = mulberry32(20261011);
+// The plan of floor 24 of block V was re-read from the sheet (6 flats before, the drawing has 8).
+// It draws its demo values from a stream of its own and still uses up its old share of the main
+// stream, so every other floor keeps the statuses and prices it had.
+const OWN_STREAM = { V24: { rand: mulberry32(20261013), used: 6 } };
 
 const VIEWS = [
   [45, 'North · river', 1.08],
@@ -49,10 +53,12 @@ for (const tower of RESIDENTIAL) {
   let number = 0;
   const first = tower.floors[0].floor;
   for (const fl of tower.floors) {
+    const own = OWN_STREAM[fl.plan];
+    if (own) for (let k = 0; k < own.used; k++) rand();
     PLANS[fl.plan].apartments.forEach((a, i) => {
       const c = centroid(a.outline);
       const view = viewOf(frame.bearing(c[0] - centre[0], c[1] - centre[1]));
-      const r = rand();
+      const r = own ? own.rand() : rand();
       const status = r < 0.55 ? 'available' : r < 0.75 ? 'reserved' : 'sold';
       const perM2 = 1350 * (1 + (fl.floor - first) * 0.02) * view.k * (a.rooms_count >= 3 ? 1.04 : 1);
       const balcony = a.balconies.reduce((s, b) => s + b.area, 0) + a.rooms.filter((r) => r.kind === 'loggia').reduce((s, r) => s + r.area, 0);
