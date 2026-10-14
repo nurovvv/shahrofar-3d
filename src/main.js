@@ -608,5 +608,20 @@ renderer.setAnimationLoop(() => {
 });
 
 refresh();
-// start slowly spinning right away
-lastInteraction = -1e9;
+// start slowly spinning right away (not for the screenshot / test scripts: ?still)
+const STILL = new URLSearchParams(location.search).has('still');
+lastInteraction = STILL ? Infinity : -1e9;
+
+// handles for the automated checks in tools/ (screenshots, picking and walk tests)
+window.__app = {
+  THREE, scene, camera, controls, renderer, state, walk, apartments,
+  get building() { return building; },
+  get interior() { return walkInterior; },
+  selectFloor, selectApt, enterWalk, exitWalk, goOverview,
+  setView(pos, target) {
+    tween = null;
+    camera.position.set(...pos);
+    controls.target.set(...target);
+    controls.update();
+  },
+};

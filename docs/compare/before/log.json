@@ -1,0 +1,25 @@
+{
+  "loadMs": 3244,
+  "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+  "size": "1600x1000",
+  "shots": [
+    "aerial",
+    "aerial_clean",
+    "aerial_river",
+    "facade_v",
+    "hotel_glass",
+    "deck",
+    "street",
+    "floor_v12",
+    "floor_b8",
+    "floor_v23"
+  ],
+  "perf": {
+    "fps": 60,
+    "p95ms": 16.9,
+    "calls": 542,
+    "triangles": 1806280,
+    "textures": 15,
+    "geometries": 284
+  }
+}
