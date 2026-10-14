@@ -39,6 +39,14 @@ canvas.addEventListener('webglcontextlost', (e) => {
 
 const scene = new THREE.Scene();
 
+// The scene stands still (only the water moves, and it casts no shadow): the sun's shadow map is
+// drawn when something changes (a file arrives, a floor opens or closes, the walk starts or ends)
+// instead of every frame, which halves the GPU work per frame.
+renderer.shadowMap.autoUpdate = false;
+let shadowFrames = 2;
+const shadowsDirty = () => (shadowFrames = 2);
+THREE.DefaultLoadingManager.onProgress = shadowsDirty;
+
 const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 1, 6000);
 // the aerial view of the marketing render: from the land side, river and bridge behind
 const HOME = { pos: new THREE.Vector3(-12, 150, 190), target: new THREE.Vector3(5, 28, -5) };
@@ -54,16 +62,18 @@ controls.maxPolarAngle = Math.PI * 0.48;
 controls.autoRotate = true;
 controls.autoRotateSpeed = 0.35;
 
-const world = buildWorld(scene, renderer);
+let building = null; // set once the model has loaded
+const loadingEl = $('#loading');
+const modelLoad = loadComplex(apartments, renderer, (k) => (loadingEl.querySelector('b').textContent = `${Math.round(k * 100)}%`));
+const world = buildWorld(scene, renderer, modelLoad.then(() => {}, () => {}));
 const pipeline = createPipeline(renderer, scene, camera);
 const walk = new WalkControls(camera, canvas);
 
-let building = null; // set once the model has loaded
-const loadingEl = $('#loading');
-loadComplex(apartments, renderer, (k) => (loadingEl.querySelector('b').textContent = `${Math.round(k * 100)}%`))
+modelLoad
   .then((b) => {
     building = b;
     scene.add(b.group);
+    shadowsDirty();
     loadingEl.hidden = true;
     refresh();
   })
@@ -350,6 +360,7 @@ function clearDollhouse() {
 }
 
 function goOverview() {
+  shadowsDirty();
   clearDollhouse();
   building?.showAll();
   Object.assign(state, { mode: 'overview', tower: null, floor: null, apt: null, hoverApt: null });
@@ -359,6 +370,7 @@ function goOverview() {
 }
 
 function selectFloor(tower, floor) {
+  shadowsDirty();
   if (!building) return;
   if (state.tower !== tower || state.floor !== floor || state.mode !== 'floor') {
     clearDollhouse();
@@ -393,6 +405,7 @@ function fade(fn) {
 }
 
 function enterWalk(a) {
+  shadowsDirty();
   fade(() => {
     clearDollhouse();
     labelsEl.innerHTML = '';
@@ -400,6 +413,7 @@ function enterWalk(a) {
     building.showAll(a.tower, a.floor);
     walkInterior = buildFloor(a.tower, a.floor, aptsOnFloor(a.tower, a.floor), a);
     scene.add(walkInterior.group);
+    shadowsDirty();
     state.mode = 'walk';
     state.hoverApt = null;
     updateOverlays();
@@ -414,12 +428,14 @@ function enterWalk(a) {
     walk.start(walkInterior, scene);
     $('#ext-ui').hidden = true;
     $('#walk-ui').hidden = false;
+    document.body.classList.add('walking');
     $('#walk-title').innerHTML = `<b>No. ${a.number}</b> · ${roomsText(a.rooms)} · ${a.area} m² · Floor ${a.floor} · ${money.format(a.price)}`;
     prepareMinimap(a);
   });
 }
 
 function exitWalk() {
+  shadowsDirty();
   const a = walkInterior.apt;
   fade(() => {
     walk.stop();
@@ -433,6 +449,7 @@ function exitWalk() {
     controls.enabled = true;
     $('#ext-ui').hidden = false;
     $('#walk-ui').hidden = true;
+    document.body.classList.remove('walking');
     state.mode = 'overview';
     selectFloor(a.tower, a.floor);
     selectApt(a);
@@ -621,7 +638,11 @@ renderer.setAnimationLoop(() => {
     if (building) updateLabels();
   }
   for (const n of water) n.offset.x += dt * 0.006, n.offset.y += dt * 0.004;
-  updateCars(camera);
+  updateCars(camera); // near / far bodies: the shadows of the two are alike, no redraw needed
+  if (shadowFrames > 0) {
+    renderer.shadowMap.needsUpdate = true;
+    shadowFrames--;
+  }
   pipeline.render(dt);
 });
 

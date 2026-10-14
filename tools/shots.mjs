@@ -42,7 +42,10 @@ for (const [name, v] of Object.entries(VIEWS)) {
   if (only.length && !only.includes(name)) continue;
   await page.evaluate(async (v) => {
     const app = window.__app;
-    for (const id of ['ext-ui', 'labels', 'tooltip']) document.getElementById(id).style.visibility = v.ui ? '' : 'hidden';
+    for (const id of ['ext-ui', 'labels', 'tooltip', 'quality']) {
+      const el = document.getElementById(id);
+      if (el) el.style.visibility = v.ui ? '' : 'hidden';
+    }
     if (v.from) app.setView(v.from.pos, v.from.target);
     if (v.floor) {
       if (app.state.mode === 'walk') app.exitWalk();

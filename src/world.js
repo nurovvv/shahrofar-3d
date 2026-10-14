@@ -15,7 +15,11 @@ const ENV = `${import.meta.env.BASE_URL}env/`;
 const SKY_INTENSITY = 1.0;
 const SUN_INTENSITY = 3.4;
 
-export function buildWorld(scene, renderer) {
+/**
+ * @param after  resolves when the model is in: sky, trees and cars wait for it, so the model (what the
+ *               first view needs) gets the whole connection first
+ */
+export function buildWorld(scene, renderer, after = Promise.resolve()) {
   const sunDir = new THREE.Vector3(...skyInfo.sun_dir).normalize();
 
   // haze towards the horizon, the colour of the low sky
@@ -43,22 +47,38 @@ export function buildWorld(scene, renderer) {
   const fill = new THREE.HemisphereLight(0xd8e6f5, 0x8a8170, 1.2);
   scene.add(fill);
 
+  // the 1k sky lights the scene (the environment map is filtered down to 256 px anyway) and is the
+  // background; on the high level the 2k sky replaces the background once everything else is in
   const pmrem = new THREE.PMREMGenerator(renderer);
-  const ready = new RGBELoader()
-    .loadAsync(`${ENV}sky_${Q.skyRes}.hdr`)
-    .then((hdr) => {
-      hdr.mapping = THREE.EquirectangularReflectionMapping;
-      scene.background = hdr;
-      scene.environment = pmrem.fromEquirectangular(hdr).texture;
+  const hdr = new RGBELoader();
+  const sky = (res) => hdr.loadAsync(`${ENV}sky_${res}.hdr`).then((t) => ((t.mapping = THREE.EquirectangularReflectionMapping), t));
+  const ready = after
+    .then(() => sky('1k'))
+    .then((t) => {
+      scene.background = t;
+      scene.environment = pmrem.fromEquirectangular(t).texture;
       fill.removeFromParent(); // the sky lights the scene now
       pmrem.dispose();
     })
     .catch((e) => console.warn('sky', e));
 
   // trees, cars and people (positions from the Blender build)
-  addTrees(scene, TREES.protos, TREES.list, TREES.placed, toScene);
-  addCars(scene, CARS, toScene);
   addPeople(scene, PEOPLE, toScene);
+  const props = after.then(() => {
+    addTrees(scene, TREES.protos, TREES.list, TREES.placed, toScene);
+    addCars(scene, CARS, toScene);
+  });
+  if (Q.skyRes !== '1k') {
+    Promise.all([ready, props])
+      .then(() => new Promise((r) => setTimeout(r, 1500)))
+      .then(() => sky(Q.skyRes))
+      .then((t) => {
+        const old = scene.background;
+        scene.background = t;
+        old?.dispose?.();
+      })
+      .catch((e) => console.warn('sky background', e));
+  }
 
-  return { sun, ready };
+  return { sun, ready: Promise.all([ready, props]) };
 }

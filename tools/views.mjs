@@ -22,8 +22,8 @@ export const VIEWS = {
   landscape: { pos: [5, 3.5, 92], target: [-12, 1.5, 62] },
   // walls between apartments, close: the same cut-away floor, camera low over the party walls
   walls_v12: { floor: ['V', 12], from: HOME, pos: [-30, 60, 4], target: [-38, 43, -14] },
-  // walking inside a flat (camera from the walk controls at the entrance)
-  walk_v12: { walk: 'V12-7' },
+  // walking inside a flat: the entrance hall of flat V12-7, looking west into the flat
+  walk_v12: { walk: 'V12-7', at: [-34.38, -7.76], yaw: 3.035, pitch: -0.08 },
   // cut-away floor views (camera from the app's own flight)
   floor_v12: { floor: ['V', 12], ui: true, from: HOME },
   floor_b8: { floor: ['B', 8], ui: true, from: HOME },

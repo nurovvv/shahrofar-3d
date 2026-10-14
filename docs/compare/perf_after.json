@@ -1,0 +1,175 @@
+{
+  "date": "2026-10-14T06:55:39.221Z",
+  "url": "http://localhost:4173/",
+  "machine": "MacBook Pro, Apple M5 Pro, 24 GB, macOS (headless Chrome, Metal)",
+  "results": [
+    {
+      "profile": "computer",
+      "network": "local",
+      "model_ready_s": 1.42,
+      "all_loaded_s": 2.53,
+      "transferred_MB": 17.6,
+      "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+      "quality": "high",
+      "pixelRatio": 1,
+      "canvas": [
+        1600,
+        1000
+      ],
+      "textures": 57,
+      "geometries": 276,
+      "aerial": {
+        "fps": 60,
+        "p95_ms": 18.3,
+        "draw_calls": 515,
+        "triangles": 1938896
+      },
+      "street": {
+        "fps": 60,
+        "p95_ms": 17.4,
+        "draw_calls": 543,
+        "triangles": 2055593
+      }
+    },
+    {
+      "profile": "computer",
+      "network": "4G",
+      "model_ready_s": 5.75,
+      "all_loaded_s": 16.5,
+      "transferred_MB": 17.6,
+      "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+      "quality": "high",
+      "pixelRatio": 1,
+      "canvas": [
+        1600,
+        1000
+      ],
+      "textures": 57,
+      "geometries": 276,
+      "aerial": {
+        "fps": 60,
+        "p95_ms": 18.2,
+        "draw_calls": 515,
+        "triangles": 1938896
+      },
+      "street": {
+        "fps": 60,
+        "p95_ms": 17.6,
+        "draw_calls": 543,
+        "triangles": 2055593
+      }
+    },
+    {
+      "profile": "computer, light mode",
+      "network": "local",
+      "model_ready_s": 1.11,
+      "all_loaded_s": 2.02,
+      "transferred_MB": 8.6,
+      "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+      "quality": "low",
+      "pixelRatio": 1,
+      "canvas": [
+        1600,
+        1000
+      ],
+      "textures": 41,
+      "geometries": 274,
+      "aerial": {
+        "fps": 60,
+        "p95_ms": 17.6,
+        "draw_calls": 497,
+        "triangles": 1932928
+      },
+      "street": {
+        "fps": 60,
+        "p95_ms": 17.3,
+        "draw_calls": 511,
+        "triangles": 1933497
+      }
+    },
+    {
+      "profile": "computer, light mode",
+      "network": "4G",
+      "model_ready_s": 5.67,
+      "all_loaded_s": 8.55,
+      "transferred_MB": 8.6,
+      "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+      "quality": "low",
+      "pixelRatio": 1,
+      "canvas": [
+        1600,
+        1000
+      ],
+      "textures": 41,
+      "geometries": 274,
+      "aerial": {
+        "fps": 60,
+        "p95_ms": 17.5,
+        "draw_calls": 497,
+        "triangles": 1932928
+      },
+      "street": {
+        "fps": 60,
+        "p95_ms": 17.8,
+        "draw_calls": 511,
+        "triangles": 1933497
+      }
+    },
+    {
+      "profile": "phone (emulated)",
+      "network": "local",
+      "model_ready_s": 0.32,
+      "all_loaded_s": 0.91,
+      "transferred_MB": 8.6,
+      "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+      "quality": "low",
+      "pixelRatio": 1.5,
+      "canvas": [
+        585,
+        1266
+      ],
+      "textures": 41,
+      "geometries": 274,
+      "aerial": {
+        "fps": 60,
+        "p95_ms": 17.2,
+        "draw_calls": 483,
+        "triangles": 1927619
+      },
+      "street": {
+        "fps": 60,
+        "p95_ms": 17.3,
+        "draw_calls": 503,
+        "triangles": 1931469
+      }
+    },
+    {
+      "profile": "phone (emulated)",
+      "network": "4G",
+      "model_ready_s": 5.67,
+      "all_loaded_s": 8.56,
+      "transferred_MB": 8.6,
+      "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+      "quality": "low",
+      "pixelRatio": 1.5,
+      "canvas": [
+        585,
+        1266
+      ],
+      "textures": 41,
+      "geometries": 274,
+      "aerial": {
+        "fps": 60,
+        "p95_ms": 17.2,
+        "draw_calls": 483,
+        "triangles": 1927619
+      },
+      "street": {
+        "fps": 60,
+        "p95_ms": 17.5,
+        "draw_calls": 503,
+        "triangles": 1931469
+      }
+    }
+  ]
+}

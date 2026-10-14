@@ -45,8 +45,8 @@ for (const [pname, p] of Object.entries(PROFILES)) {
     await page.waitForFunction(() => window.__app?.building, null, { timeout: 300000 });
     const tModel = Date.now() - t0;
     // everything the first view needs: model textures, sky, trees, cars
-    await page.waitForFunction(() => window.__app.building.texturesReady && window.__app.world.ready, null, { timeout: 300000 });
-    await page.evaluate(() => Promise.all([window.__app.building.texturesReady, window.__app.world.ready]));
+    // (the version before this work has no texture / sky promises: nothing extra to wait for)
+    await page.evaluate(() => Promise.all([window.__app.building.texturesReady, window.__app.world?.ready, window.__app.pipeline?.ready]));
     await page.waitForLoadState('networkidle');
     const tAll = Date.now() - t0;
     const info = await page.evaluate(async () => {
@@ -83,7 +83,7 @@ for (const [pname, p] of Object.entries(PROFILES)) {
       const street = await measure([62, 1.7, 112], [25, 12, 40]);
       return {
         gpu: ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : 'unknown',
-        quality: app.quality.level,
+        quality: app.quality?.level ?? 'one level',
         pixelRatio: app.renderer.getPixelRatio(),
         canvas: [app.renderer.domElement.width, app.renderer.domElement.height],
         textures: app.renderer.info.memory.textures,

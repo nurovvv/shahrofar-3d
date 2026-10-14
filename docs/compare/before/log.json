@@ -1,25 +1,20 @@
 {
-  "loadMs": 3244,
+  "loadMs": 366,
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
   "size": "1600x1000",
   "shots": [
-    "aerial",
-    "aerial_clean",
-    "aerial_river",
-    "facade_v",
-    "hotel_glass",
-    "deck",
-    "street",
-    "floor_v12",
-    "floor_b8",
-    "floor_v23"
+    "glass_close",
+    "facade_b_close",
+    "landscape",
+    "walls_v12",
+    "walk_v12"
   ],
   "perf": {
     "fps": 60,
-    "p95ms": 16.9,
-    "calls": 542,
-    "triangles": 1806280,
+    "p95ms": 17.7,
+    "calls": 615,
+    "triangles": 1824741,
     "textures": 15,
-    "geometries": 284
+    "geometries": 324
   }
 }

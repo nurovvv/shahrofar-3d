@@ -136,7 +136,7 @@ body.touch #walk-help { display: none; }
 
 /* graphics level switch */
 #quality { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 6; font-size: 12px; padding: 7px 12px; opacity: 0.85; }
-#walk-ui:not([hidden]) ~ #quality { bottom: auto; top: calc(70px + env(safe-area-inset-top, 0px)); }
+body.walking #quality { display: none; }
 
 /* no WebGL: a still and a note instead of the 3D view */
 #nogl[hidden] { display: none; }

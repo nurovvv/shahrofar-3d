@@ -159,8 +159,9 @@ const carMats = {
 };
 
 let carUpdate = null;
+/** Sort the cars into near / far bodies for this camera; true when anything changed. */
 export function updateCars(camera) {
-  carUpdate?.(camera);
+  return carUpdate?.(camera) ?? false;
 }
 
 export function addCars(scene, list, toScene) {
@@ -198,7 +199,7 @@ export function addCars(scene, list, toScene) {
     }
     const last = new THREE.Vector3(1e9, 0, 0);
     carUpdate = (camera) => {
-      if (camera.position.distanceToSquared(last) < 4) return; // re-sort only when the camera moved
+      if (camera.position.distanceToSquared(last) < 4) return false; // re-sort only when the camera moved
       last.copy(camera.position);
       for (const [type, slots] of Object.entries(byType)) {
         let nn = 0, nf = 0;
@@ -215,6 +216,7 @@ export function addCars(scene, list, toScene) {
         for (const im of slots.near) (im.count = nn), (im.instanceMatrix.needsUpdate = true), im.instanceColor && (im.instanceColor.needsUpdate = true);
         for (const im of slots.far) (im.count = nf), (im.instanceMatrix.needsUpdate = true), im.instanceColor && (im.instanceColor.needsUpdate = true);
       }
+      return true;
     };
   });
 }
