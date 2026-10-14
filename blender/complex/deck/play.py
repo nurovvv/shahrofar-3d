@@ -210,6 +210,8 @@ def fitness(mb, x, y, z, rot=0.0):
 def deck_tree(mb, x, y, z, h, r, leaf, rnd):
     """Planter tree in the language of common.tree, lighter on triangles: one fine crown clump and
     three coarser ones around it."""
+    from .. import geom
+    mb = geom.log_tree(mb, x, y, z, h, r, 'broad')
     C.rod(mb, (x, y, z), (x, y, z + h * 0.55), 0.12, 'Trunk', sides=5)
     a0 = rnd.uniform(0, 2 * math.pi)
     for k in range(3):

@@ -36,7 +36,8 @@ ASSETS = {
     'wood_floor_deck': ('texture', ['1k'], None),          # timber decks
     'rubber_tiles': ('texture', ['1k'], None),             # playground surface (normal / roughness)
     # trees, rendered into billboards (scripts/build_trees.py)
-    'tree_small_02': ('model', ['1k'], None),              # broadleaf street tree
+    'tree_small_02': ('model', ['1k'], None),              # broadleaf street tree, open crown
+    'jacaranda_tree': ('model', ['1k'], None),             # broadleaf street tree, dense round crown
     'fir_sapling_medium': ('model', ['1k'], None),         # conifers
     'pine_sapling_small': ('model', ['1k'], None),         # tall narrow trees
     'searsia_lucida': ('model', ['1k'], None),             # small ornamental trees / large shrubs

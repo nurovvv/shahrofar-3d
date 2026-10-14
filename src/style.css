@@ -134,6 +134,18 @@ body.touch #walk-help { display: none; }
 #fade { position: fixed; inset: 0; background: #0f1419; opacity: 0; pointer-events: none; transition: opacity 0.35s; z-index: 40; }
 #fade.on { opacity: 1; }
 
+/* graphics level switch */
+#quality { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 6; font-size: 12px; padding: 7px 12px; opacity: 0.85; }
+#walk-ui:not([hidden]) ~ #quality { bottom: auto; top: calc(70px + env(safe-area-inset-top, 0px)); }
+
+/* no WebGL: a still and a note instead of the 3D view */
+#nogl[hidden] { display: none; }
+#nogl { position: fixed; inset: 0; z-index: 50; background: #dfe7ee; display: grid; place-items: center; }
+#nogl img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+#nogl .panel { position: relative; max-width: 440px; margin: 16px; padding: 18px 20px; line-height: 1.45; }
+#nogl p { margin: 8px 0 0; font-size: 14px; color: var(--muted, #555); }
+body.no-webgl #ext-ui, body.no-webgl #quality { display: none; }
+
 /* phones / narrow screens */
 @media (max-width: 760px) {
   .brand { left: 16px; padding: 6px 12px 6px 6px; }
@@ -146,6 +158,7 @@ body.touch #walk-help { display: none; }
   .tower-tabs { margin: 0; flex: none; }
   #side { top: auto; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); left: 16px; right: 16px; width: auto; max-height: 46%; padding: 14px; }
   #legend, #hint { display: none; }
+  #quality { top: calc(16px + env(safe-area-inset-top, 0px)); bottom: auto; }
   #walk-help { display: none; }
   #minimap canvas { width: 160px; height: 100px; }
   .chip-lg { font-size: 12px; }

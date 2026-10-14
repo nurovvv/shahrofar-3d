@@ -239,12 +239,13 @@ def avenue_and_bridge(mats, col):
 
 def neighbours(mats, col):
     mb = MeshBuilder()
-    # translucent massing west of the site (as on the renders)
+    # context massing west of the site (drawn as translucent volumes on the renders): plain, opaque,
+    # light grey blocks with softened edges, so they read as context and never sort wrongly
     for (poly, h) in [
         (Polygon([(-135, 210), (-74, 210), (-74, 300), (-135, 300)]), 48.0),
         (Polygon([(-170, 330), (-120, 330), (-120, 345), (-170, 345)]), 30.0),
     ]:
-        mb.prism(poly, 0.0, h, 'Neighbour', 'Neighbour')
+        mb.prism_chamfer(poly, 0.0, h, 'Neighbour', 'Neighbour', None, c=0.25)
     make_object('Neighbours (massing)', mb.to_mesh('Neighbours (massing)', mats), col)
     mb = MeshBuilder()
     # low white block south-west of the playground
@@ -252,7 +253,7 @@ def neighbours(mats, col):
     b = np.array([-18.7, 164.4])
     t = (b - a) / np.linalg.norm(b - a)
     n = np.array([-t[1], t[0]])
-    mb.prism(Polygon([tuple(a), tuple(b), tuple(b + n * 14), tuple(a + n * 14)]), 0.0, 8.5, 'Neighbour solid', 'Neighbour solid')
+    mb.prism_chamfer(Polygon([tuple(a), tuple(b), tuple(b + n * 14), tuple(a + n * 14)]), 0.0, 8.5, 'Neighbour solid', 'Neighbour solid', None, c=0.08)
     c = b + n * 2
     mb.prism(Polygon([tuple(c), tuple(c + t * 6), tuple(c + t * 6 + n * 9), tuple(c + n * 9)]), 0.0, 7.0, 'Neighbour solid', 'Neighbour solid')
     # small kiosk south of the hotel

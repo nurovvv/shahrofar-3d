@@ -121,12 +121,13 @@ class MeshBuilder:
         self.uvs.append(uv if uv is not None and len(uv) == len(clean) else None)
 
     # --- primitives ---------------------------------------------------------
-    def quad_wall(self, a, b, z0, z1, mat, flip=False):
+    def quad_wall(self, a, b, z0, z1, mat, flip=False, u0=0.0):
         """Vertical quad from 2D point a to b. Outward normal is to the right of a->b
-        for counter-clockwise rings, i.e. (dy, -dx)."""
+        for counter-clockwise rings, i.e. (dy, -dx). UVs are metres: u along the wall from u0
+        (pass the running length along a ring so textures run on without seams), v = height."""
         L = math.dist(a, b)
         pts = [(a[0], a[1], z0), (b[0], b[1], z0), (b[0], b[1], z1), (a[0], a[1], z1)]
-        uv = [(0, z0), (L, z0), (L, z1), (0, z1)]
+        uv = [(u0, z0), (u0 + L, z0), (u0 + L, z1), (u0, z1)]
         if flip:
             pts.reverse()
             uv.reverse()
@@ -173,21 +174,66 @@ class MeshBuilder:
         poly = ccw(poly)
         for ring, outer in [(poly.exterior, True)] + [(r, False) for r in poly.interiors]:
             c = list(ring.coords)[:-1]
-            if not outer:
-                pass
+            u = 0.0
             for a, b in zip(c, c[1:] + c[:1]):
-                self.quad_wall(a, b, z0, z1, side, flip=False)
+                self.quad_wall(a, b, z0, z1, side, flip=False, u0=u)
+                u += math.dist(a, b)
         if top is not None:
             self.polygon_face(poly, z1, top, up=True)
         if bottom is not None:
             self.polygon_face(poly, z0, bottom, up=False)
 
+    def prism_chamfer(self, poly, z0, z1, side, top=None, bottom=None, c=0.025):
+        """Prism whose top and bottom edges are chamfered by c (a slab edge that catches the light
+        instead of a knife edge). Falls back to a plain prism for polygons with holes."""
+        if poly.is_empty:
+            return
+        if hasattr(poly, 'geoms'):
+            for g in poly.geoms:
+                if g.geom_type == 'Polygon':
+                    self.prism_chamfer(g, z0, z1, side, top, bottom, c)
+            return
+        if poly.geom_type != 'Polygon' or poly.interiors or z1 - z0 < 3 * c:
+            return self.prism(poly, z0, z1, side, top, bottom)
+        ring = [p for p in ring_coords(poly)]
+        P = np.array(ring, float)
+        n = len(P)
+        d = np.roll(P, -1, axis=0) - P
+        L = np.linalg.norm(d, axis=1)
+        keep = L > 1e-6
+        if not keep.all():
+            P, n = P[keep], int(keep.sum())
+            d = np.roll(P, -1, axis=0) - P
+            L = np.linalg.norm(d, axis=1)
+        out = np.stack([d[:, 1], -d[:, 0]], axis=1) / L[:, None]
+        prev = np.roll(out, 1, axis=0)
+        bis = out + prev
+        bis /= np.maximum(np.linalg.norm(bis, axis=1), 1e-9)[:, None]
+        k = c / np.maximum((bis * out).sum(axis=1), 0.35)
+        I = P - bis * k[:, None]
+        u = 0.0
+        for i in range(n):
+            j = (i + 1) % n
+            a, b, ai, bi = tuple(P[i]), tuple(P[j]), tuple(I[i]), tuple(I[j])
+            u1 = u + float(L[i])
+            self.quad_wall(a, b, z0 + c, z1 - c, side, u0=u)
+            self.face([(*a, z1 - c), (*b, z1 - c), (*bi, z1), (*ai, z1)], side, [(u, z1 - c), (u1, z1 - c), (u1, z1), (u, z1)])
+            self.face([(*ai, z0), (*bi, z0), (*b, z0 + c), (*a, z0 + c)], side, [(u, z0), (u1, z0), (u1, z0 + c), (u, z0 + c)])
+            u = u1
+        cap = Polygon([tuple(q) for q in I]).buffer(0)
+        if top is not None:
+            self.polygon_face(cap, z1, top, up=True)
+        if bottom is not None:
+            self.polygon_face(cap, z0, bottom, up=False)
+
     def ribbon(self, pts, z0, z1, mat, closed=False, double=False):
         seq = list(pts) + ([pts[0]] if closed else [])
+        u = 0.0
         for a, b in zip(seq[:-1], seq[1:]):
-            self.quad_wall(a, b, z0, z1, mat)
+            self.quad_wall(a, b, z0, z1, mat, u0=u)
             if double:
-                self.quad_wall(a, b, z0, z1, mat, flip=True)
+                self.quad_wall(a, b, z0, z1, mat, flip=True, u0=u)
+            u += math.dist(a, b)
 
     def ribbon_z(self, pts, zfun0, zfun1, mat, double=False):
         """Ribbon whose bottom/top heights vary per point (lists of z)."""
@@ -213,14 +259,19 @@ class MeshBuilder:
         outer = [tuple(P[i] + normals[i] * width / 2) for i in range(n)]
         inner = [tuple(P[i] - normals[i] * width / 2) for i in range(n)]
         rng = range(n if closed else n - 1)
+        u = 0.0
         for i in rng:
             j = (i + 1) % n
             o0, o1, i0, i1 = outer[i], outer[j], inner[i], inner[j]
             a0, a1, b0, b1 = z0s[i], z0s[j], z1s[i], z1s[j]
-            self.face([(*o0, a0), (*o1, a1), (*o1, b1), (*o0, b0)], mat)
-            self.face([(*i1, a1), (*i0, a0), (*i0, b0), (*i1, b1)], mat)
-            self.face([(*o0, b0), (*o1, b1), (*i1, b1), (*i0, b0)], mat)
-            self.face([(*i0, a0), (*i1, a1), (*o1, a1), (*o0, a0)], mat)
+            L = math.dist(pts[i], pts[j])
+            u1 = u + L
+            w = width
+            self.face([(*o0, a0), (*o1, a1), (*o1, b1), (*o0, b0)], mat, [(u, a0), (u1, a1), (u1, b1), (u, b0)])
+            self.face([(*i1, a1), (*i0, a0), (*i0, b0), (*i1, b1)], mat, [(u1, a1), (u, a0), (u, b0), (u1, b1)])
+            self.face([(*o0, b0), (*o1, b1), (*i1, b1), (*i0, b0)], mat, [(u, 0), (u1, 0), (u1, w), (u, w)])
+            self.face([(*i0, a0), (*i1, a1), (*o1, a1), (*o0, a0)], mat, [(u, w), (u1, w), (u1, 0), (u, 0)])
+            u = u1
         if not closed:
             for k, sgn in [(0, 1), (n - 1, -1)]:
                 q = [(*outer[k], z0s[k]), (*outer[k], z1s[k]), (*inner[k], z1s[k]), (*inner[k], z0s[k])]
@@ -283,9 +334,39 @@ class MeshBuilder:
         uvl.data.foreach_set('uv', flat)
         me.validate(clean_customdata=False)
         me.update()
-        for p in me.polygons:
-            p.use_smooth = False
+        smooth_by_angle(me)
         return me
+
+
+# Trees for the web viewer: while this is a list, the tree helpers (podium, street, deck, wedge) record
+# each tree here as [x, y, z, height, crown radius, kind] and model it into a builder that is thrown
+# away (so the random sequence, and every placement after it, stays as it was); the viewer draws them
+# from photographed trees. None: the trees are modelled into the scene (Blender stills).
+TREE_LOG = None
+
+
+def log_tree(mb, x, y, z, h, r, kind):
+    """Record the tree when collecting; returns the builder to model it into (a scratch one then)."""
+    if TREE_LOG is None:
+        return mb
+    TREE_LOG.append([round(x, 2), round(y, 2), round(z, 2), round(h, 2), round(r, 2), kind])
+    return MeshBuilder()
+
+
+SMOOTH_ANGLE = math.radians(32)
+
+
+def smooth_by_angle(me, angle=SMOOTH_ANGLE):
+    """Smooth shading across the facets of curved walls, slabs and rails (their faces meet at a few
+    degrees), crisp edges where faces meet at more than `angle` (corners, reveals, slab edges)."""
+    if not me.polygons:
+        return
+    me.polygons.foreach_set('use_smooth', [True] * len(me.polygons))
+    try:
+        me.set_sharp_from_angle(angle=angle)   # Blender 4.1+
+    except AttributeError:
+        me.use_auto_smooth = True               # Blender < 4.1
+        me.auto_smooth_angle = angle
 
 
 _ICO = {}

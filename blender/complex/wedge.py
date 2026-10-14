@@ -531,6 +531,8 @@ def full_tree(mb, x, y, z, h, r, rnd, leaves=('Leaves', 'Leaves light'), trunk=0
     """Big street tree: short trunk forking into limbs, a broad crown of overlapping clumps that starts
     low, two leaf greens mixed."""
     from .deck.common import rod
+    from . import geom
+    mb = geom.log_tree(mb, x, y, z, h, r, 'broad')
     zt = z + h * trunk
     rod(mb, (x, y, z), (x, y, zt), 0.06 + 0.012 * h, 'Trunk', sides=6)
     for k in range(4):
@@ -556,6 +558,8 @@ def bushy_tree(mb, x, y, z, h, r, rnd, leaves=('Leaves', 'Leaves light')):
     2-3 leaning stems at about 0.6 m, and a lumpy crown wider than it is tall that starts about a metre
     over the planter, built from a core and 8-10 clumps of mixed size, offset sideways and up and down."""
     from .deck.common import rod
+    from . import geom
+    mb = geom.log_tree(mb, x, y, z, h, r, 'shrub')
     zf = z + 0.6
     rod(mb, (x, y, z - 0.05), (x, y, zf), 0.1, 'Trunk', sides=6)
     a0 = rnd.uniform(0, 2 * math.pi)

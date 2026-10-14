@@ -29,6 +29,11 @@ GT=(npx --yes @gltf-transform/cli@4.1.1)
 "${GT[@]}" weld "$OUT.dedup.glb" "$OUT.weld.glb"
 "${GT[@]}" meshopt "$OUT.weld.glb" public/models/shahrofar.glb
 rm -f "$OUT.dedup.glb" "$OUT.weld.glb"
+# cars for the streets (blender/props/build_cars.py)
+"$BLENDER" -b --factory-startup -P blender/props/build_cars.py -- --out build/cars.glb
+"${GT[@]}" weld build/cars.glb build/cars.weld.glb
+"${GT[@]}" meshopt build/cars.weld.glb public/models/cars.glb
+rm -f build/cars.weld.glb
 cp "$OUT.json" src/model/complex.json
 cp "$OUT.plans.json" src/model/plans.json
 ls -la public/models/shahrofar.glb src/model/complex.json src/model/plans.json

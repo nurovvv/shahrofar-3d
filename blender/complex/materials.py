@@ -19,9 +19,9 @@ SPECS = {
     'Roof': ('#d36a68', 0.9, 0.0, {}),
     'Plant room': ('#5a3a2f', 0.85, 0.0, {}),
     'Solar panel': ('#56627e', 0.3, 0.4, {}),
-    'Window glass': ('#35524c', 0.08, 0.0, {'specular': 0.7}),
-    'Curtain glass': ('#2f8070', 0.05, 0.0, {'specular': 0.6}),
-    'Shop glass': ('#3a5559', 0.05, 0.0, {'specular': 0.8}),
+    'Window glass': ('#35524c', 0.08, 0.0, {}),
+    'Curtain glass': ('#2f8070', 0.05, 0.0, {}),
+    'Shop glass': ('#3a5559', 0.05, 0.0, {}),
     'Frame': ('#d9d2c6', 0.45, 0.0, {}),
     'Railing glass': ('#c9dbe2', 0.05, 0.0, {'alpha': 0.14}),
     'Copper screen': ('#9c5a3c', 0.45, 0.55, {}),
@@ -48,11 +48,11 @@ SPECS = {
     'Stained blue': ('#3c63b8', 0.1, 0.0, {'emission': ('#2f5fd8', 0.12)}),
     'Stained violet': ('#7f52b0', 0.1, 0.0, {'emission': ('#8a48c8', 0.12)}),
     'Embankment': ('#b5ab9c', 0.95, 0.0, {}),
-    'River': ('#0d78b4', 0.25, 0.0, {'specular': 0.3}),
+    'River': ('#0d78b4', 0.25, 0.0, {}),
     'Foam': ('#e8f2f4', 0.6, 0.0, {}),
     'Bridge': ('#b9b6b0', 0.8, 0.0, {}),
     'Metal': ('#7d8288', 0.35, 0.8, {}),
-    'Neighbour': ('#dfe8ee', 0.15, 0.0, {'alpha': 0.3}),
+    'Neighbour': ('#d6d7d6', 0.85, 0.0, {}),   # context blocks: plain light grey massing, opaque
     'Neighbour solid': ('#e9e7e3', 0.7, 0.0, {}),
     'Car': ('#d8dade', 0.3, 0.5, {}),
     'Car dark': ('#2a2e33', 0.3, 0.5, {}),
@@ -75,12 +75,12 @@ SPECS = {
     'Bollard': ('#f1f0eb', 0.5, 0.0, {}),
     'Promenade': ('#bfaa9c', 0.85, 0.0, {}),      # warm pinkish-beige street paving (renders ~#cbbbb3 in sun)
     'Shop frame': ('#2c3034', 0.4, 0.5, {}),      # dark mullions / transoms of the shop front
-    'Gallery glass': ('#eef1f0', 0.12, 0.0, {'specular': 0.5}),   # light glazing of the shop front's 2nd level
+    'Gallery glass': ('#eef1f0', 0.12, 0.0, {}),   # light glazing of the shop front's 2nd level
     'Umbrella sand': ('#c88b51', 0.8, 0.0, {}),   # light ochre canvas of the pool's sail umbrellas (renders ~#d9a067 sunlit)
     'Cobble joint': ('#8e8a86', 0.9, 0.0, {}),    # mid-grey joints between the playground cobbles
-    'Shop window': ('#c8d0cc', 0.12, 0.0, {'specular': 0.4}),   # light grey-green shop glazing (ground floor)
+    'Shop window': ('#c8d0cc', 0.12, 0.0, {}),   # light grey-green shop glazing (ground floor)
     'Sign blue': ('#3d8fe8', 0.4, 0.0, {'emission': ('#3a8cff', 0.5)}),   # LC Waikiki logo on the copper band
-    'Railing glass dark': ('#3c5463', 0.05, 0.0, {'alpha': 0.7, 'specular': 0.8}),   # tinted balustrade of the hotel's terrace wing
+    'Railing glass dark': ('#3c5463', 0.05, 0.0, {'alpha': 0.7}),   # tinted balustrade of the hotel's terrace wing
 }
 
 

@@ -199,6 +199,8 @@ def street_tree(mb, x, y, z, rnd):
     from .deck.common import rod
     h = rnd.uniform(4.2, 5.4)
     r = rnd.uniform(1.3, 1.7)
+    from . import geom
+    mb = geom.log_tree(mb, x, y, z, h, r, 'broad')
     rod(mb, (x, y, z), (x, y, z + h * 0.5), 0.1, 'Trunk', sides=5)
     for k in range(3):
         a = k * 2.1 + rnd.uniform(-0.3, 0.3)

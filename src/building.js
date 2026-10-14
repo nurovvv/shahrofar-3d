@@ -5,41 +5,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { MODEL_URL, toScene, towerByKey } from './config.js';
-import { groundTexture } from './textures.js';
-import { FACADE_MAPS } from './facade_maps.js';
-
-const GLASS = new Set(['Window glass', 'Curtain glass', 'Shop glass', 'Shop window', 'Gallery glass', 'Pool water', 'River']);
-
-const GROUND = {
-  Grass: 'grass', Lawn: 'grass', Asphalt: 'asphalt', Paving: 'paving', Sidewalk: 'paving', 'Deck paving': 'deck',
-  Cobble: 'cobble', 'Deck stone': 'stone', 'Pool mosaic': 'mosaic', 'Copper screen': 'copper', 'Rubber blue': 'rubber',
-  Promenade: 'promenade',
-  ...FACADE_MAPS,
-};
-const groundTex = {};
-
-function tuneMaterial(m) {
-  const g = GROUND[m.name];
-  if (g) {
-    groundTex[g] ??= groundTexture(g);
-    m.map = groundTex[g];
-    m.color.set(0xffffff);
-    m.needsUpdate = true;
-  }
-  if (GLASS.has(m.name)) {
-    // lighter glass that picks up the sky
-    if (!['River', 'Pool water', 'Shop window', 'Gallery glass'].includes(m.name)) m.color.offsetHSL(0, -0.05, 0.12);
-    m.envMapIntensity = 1.2;
-    m.roughness = Math.max(0.06, Math.min(m.roughness, 0.12));
-  }
-  if (m.name.startsWith('Stained')) m.emissiveIntensity = 0.25;
-  if (m.name === 'Railing glass' || m.name === 'Railing glass dark' || m.name === 'Neighbour') {
-    m.transparent = true;
-    m.depthWrite = false;
-    m.side = THREE.DoubleSide;
-  }
-  if (m.name.startsWith('Leaves') || m.name === 'Shrub' || m.name === 'Grass' || m.name === 'Lawn') m.envMapIntensity = 0.4;
-}
+import { materialFor, setupMaterial } from './materials.js';
 
 // The published artifact page can't serve .glb files, so it gets the same bytes base64-encoded
 // in a JSON file ({ "glb": "..." }); everywhere else the .glb is loaded directly.
@@ -50,7 +16,7 @@ async function loadModel(loader, url, onProgress) {
   return loader.parseAsync(bytes.buffer, '');
 }
 
-export async function loadComplex(apartments, onProgress) {
+export async function loadComplex(apartments, renderer, onProgress) {
   const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
   const gltf = await loadModel(loader, MODEL_URL, onProgress);
   const root = gltf.scene;
@@ -61,6 +27,7 @@ export async function loadComplex(apartments, onProgress) {
   const tower = (k) => (towers[k] ??= { floors: {}, roof: null });
   const picks = [];
   const tuned = new Set();
+  const textures = []; // material texture loads (the model shows before they are all in)
 
   root.traverse((obj) => {
     const d = obj.userData;
@@ -71,9 +38,10 @@ export async function loadComplex(apartments, onProgress) {
     if (obj.isMesh) {
       obj.castShadow = true;
       obj.receiveShadow = true;
+      obj.material = Array.isArray(obj.material) ? obj.material.map(materialFor) : materialFor(obj.material);
       for (const m of [obj.material].flat()) {
         if (!tuned.has(m)) {
-          tuneMaterial(m);
+          textures.push(setupMaterial(m, renderer));
           tuned.add(m);
         }
         if (m.transparent) obj.castShadow = false;
@@ -126,6 +94,7 @@ export async function loadComplex(apartments, onProgress) {
   const setVisible = (o, v) => o && (o.visible = v);
 
   return {
+    texturesReady: Promise.all(textures),
     group: root,
     towers,
     units,

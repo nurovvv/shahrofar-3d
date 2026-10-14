@@ -1,7 +1,12 @@
-// Trees, cars and people around the complex, drawn as instanced meshes from the positions the
-// Blender build exports (model/complex.json). Geometry is generated here, so nothing else to load.
+// Trees, cars and people around the complex, drawn as instanced meshes at the positions the
+// Blender build exports (model/complex.json): tree billboards (public/trees), car bodies
+// (public/models/cars.glb), people generated here.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { Q } from './quality.js';
+import TREES_INFO from '../public/trees/trees.json';
 
 // deterministic noise so every visit looks the same
 function rng(seed) {
@@ -11,219 +16,264 @@ function rng(seed) {
   };
 }
 
-function colorize(geo, fn) {
-  geo = geo.index ? geo.toNonIndexed() : geo;
-  const pos = geo.attributes.position, n = pos.count;
-  const col = new Float32Array(n * 3), c = new THREE.Color();
-  for (let i = 0; i < n; i++) {
-    fn(c, pos.getX(i), pos.getY(i), pos.getZ(i));
-    col.set([c.r, c.g, c.b], i * 3);
-  }
-  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  return geo;
-}
+// ---------- trees ----------
+// Billboards of photographed CC0 trees (Poly Haven), rendered in Blender (blender/trees): three
+// upright quads crossed at 60 degrees, each face showing the tree from its side, plus one quad
+// seen from above. Colour, cut-out and normals come from the renders, so the sun and the sky light
+// them like the rest of the scene and they cast proper shadows. 14 triangles per tree, one draw
+// call per kind; size, turn and tint vary per tree.
+const TREE_URL = `${import.meta.env.BASE_URL}trees/`; // + a_ / b_ atlas prefix from trees.json
+const SIDES = 6;
 
-// a lumpy foliage cluster: icosphere pushed in and out by smooth noise
-function clump(r, rnd, detail = 2, squash = 0.85) {
-  const g = new THREE.IcosahedronGeometry(r, detail);
-  const p = g.attributes.position;
-  const k = [rnd() * 6, rnd() * 6, rnd() * 6];
-  for (let i = 0; i < p.count; i++) {
-    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-    const nz = 1 + 0.16 * Math.sin(x * 3.1 + k[0]) * Math.cos(y * 2.7 + k[1]) + 0.1 * Math.sin(z * 4.3 + k[2]);
-    p.setXYZ(i, x * nz, y * nz * squash, z * nz);
+function impostorGeometry(v) {
+  const pos = [], nor = [], uv = [], idx = [];
+  const quad = (p0, p1, p2, p3, n, cell) => {
+    const [u0, v0, du, dv] = cell;
+    const base = pos.length / 3;
+    pos.push(...p0, ...p1, ...p2, ...p3);
+    for (let i = 0; i < 4; i++) nor.push(...n);
+    uv.push(u0, v0, u0 + du, v0, u0 + du, v0 + dv, u0, v0 + dv);
+    idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  };
+  const S = v.side, h = S / 2;
+  for (let k = 0; k < SIDES; k++) {
+    // view k was rendered from direction (sin a, -cos a) on the Blender ground plane = (sin a, cos a) here
+    const a = (2 * Math.PI * k) / SIDES;
+    const d = [Math.sin(a), 0, Math.cos(a)], r = [Math.cos(a), 0, -Math.sin(a)];
+    quad([-r[0] * h, 0, -r[2] * h], [r[0] * h, 0, r[2] * h], [r[0] * h, S, r[2] * h], [-r[0] * h, S, -r[2] * h], d, v.cells[`side${k}`]);
   }
-  g.computeVertexNormals();
+  // from above, level with the middle of the crown; image up = Blender +y = -z here
+  const T = v.top / 2, y = v.height * 0.62;
+  quad([-T, y, T], [T, y, T], [T, y, -T], [-T, y, -T], [0, 1, 0], v.cells.top);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
   return g;
 }
 
-const BARK = new THREE.Color(0x5b4334);
-function trunk(h, r0, r1, branches, rnd) {
-  const parts = [new THREE.CylinderGeometry(r1, r0, h, 7).translate(0, h / 2, 0)];
-  for (let i = 0; i < branches; i++) {
-    const len = h * (0.35 + rnd() * 0.25);
-    const b = new THREE.CylinderGeometry(r1 * 0.35, r1 * 0.6, len, 5).translate(0, len / 2, 0);
-    b.rotateZ(0.6 + rnd() * 0.4);
-    b.rotateY((i / branches) * Math.PI * 2 + rnd());
-    b.translate(0, h * (0.6 + rnd() * 0.3), 0);
-    parts.push(b);
-  }
-  return colorize(mergeGeometries(parts.map((g) => g.toNonIndexed())), (c) => c.copy(BARK));
-}
-
-// leaf colour: darker underneath and inside, lighter where the sun hits
-function leafShade(base, cy, top) {
-  return (c, x, y, z) => {
-    const t = THREE.MathUtils.clamp((y - cy) / top, -1, 1);
-    c.copy(base).offsetHSL(0, 0, 0.07 * t - 0.02 + 0.02 * Math.sin(x * 5 + z * 3));
-  };
-}
-
-// Tree species: { wood, leaves } geometries (unit size; instances scale them)
-function species(rnd) {
-  const out = [];
-  // 1. broadleaf (plane / elm): wide round crown of several clumps
-  {
-    const h = 3.2;
-    const leaves = [];
-    for (const [x, y, z, r] of [[0, 5.2, 0, 2.3], [1.3, 4.6, 0.5, 1.6], [-1.2, 4.7, -0.4, 1.7], [0.3, 4.4, -1.3, 1.5], [-0.4, 4.5, 1.3, 1.5], [0.2, 6.3, 0.2, 1.4]]) {
-      leaves.push(clump(r, rnd).translate(x, y, z));
-    }
-    const g = mergeGeometries(leaves.map((x) => x.toNonIndexed()));
-    out.push({ wood: trunk(h + 1.2, 0.26, 0.18, 4, rnd), leaves: colorize(g, leafShade(new THREE.Color(0x4b6b25), 5.0, 2.2)) });
-  }
-  // 2. conifer: stacked drooping cones
-  {
-    const cones = [];
-    for (let i = 0; i < 5; i++) {
-      const r = 2.0 - i * 0.36, y = 2.0 + i * 1.35;
-      const c = new THREE.ConeGeometry(r, 2.4, 9, 1, true).translate(0, y + 1.2, 0);
-      cones.push(c);
-    }
-    const g = mergeGeometries(cones.map((x) => x.toNonIndexed()));
-    out.push({ wood: trunk(2.6, 0.2, 0.14, 0, rnd), leaves: colorize(g, leafShade(new THREE.Color(0x2f4a2a), 5, 4)) });
-  }
-  // 3. poplar / cypress: tall narrow crown
-  {
-    const leaves = [];
-    for (const [y, r] of [[3.4, 1.2], [5.0, 1.15], [6.6, 0.95], [8.0, 0.65]]) leaves.push(clump(r, rnd, 2, 1.5).translate(0, y, 0));
-    const g = mergeGeometries(leaves.map((x) => x.toNonIndexed()));
-    out.push({ wood: trunk(3.0, 0.2, 0.14, 0, rnd), leaves: colorize(g, leafShade(new THREE.Color(0x3e6125), 5.5, 3)) });
-  }
-  // 4. young ornamental tree: small light crown
-  {
-    const leaves = [];
-    for (const [x, y, z, r] of [[0, 3.2, 0, 1.3], [0.7, 2.9, 0.3, 0.9], [-0.6, 3.0, -0.3, 0.9]]) leaves.push(clump(r, rnd).translate(x, y, z));
-    const g = mergeGeometries(leaves.map((x) => x.toNonIndexed()));
-    out.push({ wood: trunk(2.2, 0.12, 0.08, 3, rnd), leaves: colorize(g, leafShade(new THREE.Color(0x6a8a2c), 3.1, 1.3)) });
-  }
-  return out;
-}
-
-export function addTrees(scene, protos, list, toScene) {
-  const rnd = rng(11);
-  const kinds = species(rnd);
-  // proto from the Blender build (height, radius, light) -> species
-  const pick = (p, i) => {
-    if (p.light && p.h <= 6) return 3;
-    if (p.h >= 9 && (i % 3 === 0)) return 1;
-    if (p.r < 2.4 && (i % 4 === 1)) return 2;
-    return 0;
-  };
-  const groups = kinds.map(() => []);
-  list.forEach(([x, y, sc, sz, rot, k], i) => groups[pick(protos[k], i)].push({ x, y, sc, sz, rot, p: protos[k] }));
-  const wood = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
-  const leaf = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, envMapIntensity: 0.3 });
-  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3(), e = new THREE.Euler();
-  const tint = new THREE.Color();
-  kinds.forEach((kind, si) => {
-    const items = groups[si];
-    if (!items.length) return;
-    const wm = new THREE.InstancedMesh(kind.wood, wood, items.length);
-    const lm = new THREE.InstancedMesh(kind.leaves, leaf, items.length);
-    items.forEach((t, i) => {
-      const w = toScene(t.x, t.y);
-      const k = (t.p.h / 7) * t.sc; // the build's tree height relative to the 7 m reference
-      q.setFromEuler(e.set(0, t.rot, 0));
-      m4.compose(p.set(w.x, 0, w.z), q, s.set(k, k * t.sz, k));
-      wm.setMatrixAt(i, m4);
-      lm.setMatrixAt(i, m4);
-      tint.setHSL(0, 0, 1).offsetHSL(((i * 37) % 11) * 0.004 - 0.02, 0, ((i * 53) % 9) * 0.012 - 0.05);
-      lm.setColorAt(i, tint);
-    });
-    for (const m of [wm, lm]) {
-      m.castShadow = true;
-      m.receiveShadow = true;
-      scene.add(m);
-    }
+/**
+ * @param protos, list  the site plan's trees (model/complex.json: trees, tree_protos)
+ * @param placed        trees on the podium decks, terraces and promenade: [x, y, z, height, radius, kind]
+ */
+// Foliage cut-outs thin out in the smaller mip levels (averaging leaves with sky lowers alpha below the
+// cut), so distant trees would look bare. Alpha is scaled up with the mip level actually sampled
+// (keeps the crown's coverage), then three.js sharpens it for alpha-to-coverage.
+function treeMaterial(atlas, size) {
+  const loader = new THREE.TextureLoader();
+  const color = loader.load(`${TREE_URL}${atlas}color_${size}.webp`);
+  color.colorSpace = THREE.SRGBColorSpace;
+  const normal = loader.load(`${TREE_URL}${atlas}normal_${size}.webp`);
+  for (const t of [color, normal]) t.anisotropy = 4;
+  const mat = new THREE.MeshStandardMaterial({
+    map: color,
+    normalMap: normal,
+    alphaTest: 0.42,
+    alphaToCoverage: true,
+    roughness: 0.82,
+    envMapIntensity: 0.55,
   });
+  const px = size === '2k' ? 2048 : 1024;
+  mat.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <alphatest_fragment>', `
+      {
+        vec2 t = vMapUv * ${px.toFixed(1)};
+        vec2 dx = dFdx(t), dy = dFdy(t);
+        float mip = max(0.0, 0.5 * log2(max(dot(dx, dx), dot(dy, dy))));
+        diffuseColor.a *= 1.0 + mip * 0.28;
+      }
+      #include <alphatest_fragment>`);
+  };
+  mat.customProgramCacheKey = () => `tree${px}`;
+  return mat;
+}
+
+export function addTrees(scene, protos, list, placed, toScene) {
+  const size = Q.level === 'high' ? '2k' : '1k';
+  const mats = {};
+  const matFor = (atlas) => (mats[atlas] ??= treeMaterial(atlas, size));
+  // kinds of tree -> rendered variants (alternating where there are two)
+  const kinds = { broad: ['broad_b', 'broad', 'broad_b'], conifer: ['fir_a', 'fir_b'], poplar: ['poplar'], small: ['shrub'], shrub: ['shrub'] };
+  // site plan proto (height, radius, light crown) -> kind
+  const pick = (p, i) => {
+    if (p.light && p.h <= 6) return 'small';
+    if (p.h >= 9 && i % 3 === 0) return 'conifer';
+    if (p.r < 2.4 && i % 4 === 1) return 'poplar';
+    return 'broad';
+  };
+  const items = [
+    ...list.map(([x, y, sc, sz, rot, k], i) => ({ x, y, z: 0, h: protos[k].h * sc * sz, r: protos[k].r * sc, rot, kind: pick(protos[k], i) })),
+    ...placed.map(([x, y, z, h, r, kind], i) => ({ x, y, z, h, r, rot: i * 2.39996, kind })),
+  ];
+  const groups = {};
+  items.forEach((t, i) => {
+    const vs = kinds[t.kind] ?? kinds.broad;
+    (groups[vs[i % vs.length]] ??= []).push(t);
+  });
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3(), e = new THREE.Euler();
+  const tint = new THREE.Color(), white = new THREE.Color(1, 1, 1);
+  const rnd = rng(23);
+  for (const [variant, group] of Object.entries(groups)) {
+    const v = TREES_INFO[variant] ?? TREES_INFO.broad;
+    if (!v) continue;
+    const mesh = new THREE.InstancedMesh(impostorGeometry(v), matFor(v.atlas ?? ''), group.length);
+    group.forEach((t, i) => {
+      const w = toScene(t.x, t.y);
+      // the plan's height and crown radius, within the photographed tree's proportions
+      const kv = t.h / v.height;
+      const kh = THREE.MathUtils.clamp(t.r / v.radius, kv * 0.8, kv * 1.25);
+      q.setFromEuler(e.set(0, t.rot + rnd() * Math.PI * 2, 0));
+      m4.compose(p.set(w.x, t.z, w.z), q, s.set(kh, kv, kh));
+      mesh.setMatrixAt(i, m4);
+      // a little more or less green and light from tree to tree
+      tint.setHSL(0.27 + (rnd() - 0.5) * 0.05, 0.25 + rnd() * 0.15, 0.5 + (rnd() - 0.5) * 0.12).lerp(white, 0.72);
+      mesh.setColorAt(i, tint);
+    });
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.frustumCulled = false; // instances spread over the whole site
+    mesh.name = `trees ${variant}`;
+    scene.add(mesh);
+  }
 }
 
 // ---------- cars ----------
-const CAR_PAINT = [0xd9dde2, 0xc9ccd0, 0x23272d, 0xa82a2a, 0xece8df, 0x5b6b7c, 0x1d2a44];
+// Saloon, SUV and hatchback modelled in Blender (blender/props/build_cars.py): one instanced mesh
+// per body type and material, a close-up and a far version (a quarter of the triangles) chosen per
+// car by its distance from the camera. Paint is a clearcoat (MeshPhysicalMaterial: the lacquer layer
+// is what makes car paint read as car paint); everything else is the standard material.
+const CAR_URL = `${import.meta.env.BASE_URL}models/cars.glb`;
+const CAR_PAINT = [0xe8e9eb, 0xc4c7cb, 0x24272c, 0x8f1f22, 0xf2efe8, 0x51606e, 0x1c2638, 0x7d8085];
+const CAR_TYPES = ['saloon', 'saloon', 'suv', 'saloon', 'hatch', 'suv', 'saloon', 'hatch'];
+const CAR_NEAR = Q.level === 'high' ? 120 : 60; // metres: closer than this, the detailed body
 
-function carGeometries() {
-  // side profile of a saloon, x along the car, extruded across (z), 4.5 m long
-  const body = new THREE.Shape([
-    [-2.25, 0.32], [2.2, 0.32], [2.3, 0.55], [2.22, 0.8], [1.15, 0.92], [0.55, 1.36], [-0.85, 1.4],
-    [-1.55, 0.98], [-2.2, 0.92], [-2.3, 0.6],
-  ].map(([x, y]) => new THREE.Vector2(x, y)));
-  const bodyG = new THREE.ExtrudeGeometry(body, { depth: 1.62, bevelEnabled: true, bevelSize: 0.08, bevelThickness: 0.08, bevelSegments: 2 });
-  bodyG.translate(0, 0, -0.81);
-  const glass = new THREE.Shape([[1.08, 0.95], [0.53, 1.33], [-0.83, 1.37], [-1.47, 0.99]].map(([x, y]) => new THREE.Vector2(x, y)));
-  const glassG = new THREE.ExtrudeGeometry(glass, { depth: 1.74, bevelEnabled: false }).translate(0, 0, -0.87);
-  const wheels = [];
-  for (const x of [-1.42, 1.42]) {
-    for (const z of [-0.78, 0.78]) {
-      wheels.push(new THREE.CylinderGeometry(0.33, 0.33, 0.24, 16).rotateX(Math.PI / 2).translate(x, 0.33, z).toNonIndexed());
-    }
-  }
-  const lights = [];
-  for (const z of [-0.6, 0.6]) {
-    lights.push(new THREE.BoxGeometry(0.06, 0.12, 0.34).translate(2.34, 0.66, z).toNonIndexed());
-  }
-  const rear = [];
-  for (const z of [-0.62, 0.62]) rear.push(new THREE.BoxGeometry(0.06, 0.12, 0.34).translate(-2.36, 0.72, z).toNonIndexed());
-  return {
-    body: bodyG,
-    glass: glassG,
-    wheels: mergeGeometries(wheels),
-    front: mergeGeometries(lights),
-    rear: mergeGeometries(rear),
-  };
+const carMats = {
+  'Car paint': () => new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.42, metalness: 0.55, clearcoat: 1, clearcoatRoughness: 0.08, envMapIntensity: 1.1 }),
+  'Car glass': () => new THREE.MeshStandardMaterial({ color: 0x121619, roughness: 0.05, metalness: 0.0, envMapIntensity: 1.3 }),
+  'Car tyre': () => new THREE.MeshStandardMaterial({ color: 0x1b1b1d, roughness: 0.92 }),
+  'Car rim': () => new THREE.MeshStandardMaterial({ color: 0xb9bdc1, roughness: 0.3, metalness: 0.9 }),
+  'Car lamp': () => new THREE.MeshStandardMaterial({ color: 0xf4f4f0, roughness: 0.1, emissive: 0xfff6e2, emissiveIntensity: 0.15 }),
+  'Car rear lamp': () => new THREE.MeshStandardMaterial({ color: 0x8c0d10, roughness: 0.2, emissive: 0x5a0000, emissiveIntensity: 0.3 }),
+  'Car under': () => new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.95 }),
+};
+
+let carUpdate = null;
+export function updateCars(camera) {
+  carUpdate?.(camera);
 }
 
 export function addCars(scene, list, toScene) {
-  const G = carGeometries();
-  const n = list.length;
-  const paint = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.32, metalness: 0.55, clearcoat: 1, clearcoatRoughness: 0.15 });
-  const meshes = [
-    new THREE.InstancedMesh(G.body, paint, n),
-    new THREE.InstancedMesh(G.glass, new THREE.MeshStandardMaterial({ color: 0x1a2129, roughness: 0.08, metalness: 0.6 }), n),
-    new THREE.InstancedMesh(G.wheels, new THREE.MeshStandardMaterial({ color: 0x1b1c1f, roughness: 0.8 }), n),
-    new THREE.InstancedMesh(G.front, new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff3d8, emissiveIntensity: 0.6 }), n),
-    new THREE.InstancedMesh(G.rear, new THREE.MeshStandardMaterial({ color: 0x8a1010, emissive: 0x6a0000, emissiveIntensity: 0.6 }), n),
-  ];
-  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), c = new THREE.Color();
-  list.forEach(([x, y, z, r, k], i) => {
-    const w = toScene(x, y);
-    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), r);
-    m4.compose(p.set(w.x, z, w.z), q, one);
-    meshes.forEach((m) => m.setMatrixAt(i, m4));
-    meshes[0].setColorAt(i, c.setHex(CAR_PAINT[(k + i) % CAR_PAINT.length]));
+  const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+  loader.load(CAR_URL, (gltf) => {
+    const mats = {};
+    const mat = (name) => (mats[name] ??= (carMats[name] ?? carMats['Car under'])());
+    // body type -> { near: [InstancedMesh], far: [InstancedMesh] }
+    const byType = {};
+    const cars = list.map(([x, y, z, r, k], i) => ({ type: CAR_TYPES[(k + i) % CAR_TYPES.length], x, y, z, r, color: CAR_PAINT[(k * 3 + i) % CAR_PAINT.length] }));
+    gltf.scene.updateMatrixWorld(true);
+    gltf.scene.traverse((o) => {
+      if (!o.isMesh) return;
+      const node = o.parent?.isMesh || o.parent === gltf.scene ? o : o.parent;
+      const [type, far] = (node.name || o.name).split('_');
+      const n = cars.filter((c) => c.type === type).length;
+      if (!n) return;
+      const slot = (byType[type] ??= { near: [], far: [] })[far ? 'far' : 'near'];
+      const g = o.geometry.clone().applyMatrix4(o.matrixWorld);
+      const im = new THREE.InstancedMesh(g, mat(o.material.name), n);
+      im.castShadow = true;
+      im.receiveShadow = true;
+      im.frustumCulled = false;
+      im.count = 0;
+      slot.push(im);
+      scene.add(im);
+    });
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), c = new THREE.Color();
+    const up = new THREE.Vector3(0, 1, 0);
+    for (const car of cars) {
+      const w = toScene(car.x, car.y);
+      car.pos = new THREE.Vector3(w.x, car.z, w.z);
+      // the build's cars face +x at r = 0 (Blender), the model's nose is +x too
+      car.matrix = m4.compose(p.copy(car.pos), q.setFromAxisAngle(up, car.r), one).clone();
+    }
+    const last = new THREE.Vector3(1e9, 0, 0);
+    carUpdate = (camera) => {
+      if (camera.position.distanceToSquared(last) < 4) return; // re-sort only when the camera moved
+      last.copy(camera.position);
+      for (const [type, slots] of Object.entries(byType)) {
+        let nn = 0, nf = 0;
+        for (const car of cars) {
+          if (car.type !== type) continue;
+          const near = car.pos.distanceTo(camera.position) < CAR_NEAR;
+          const set = near ? slots.near : slots.far;
+          const idx = near ? nn++ : nf++;
+          for (const im of set) {
+            im.setMatrixAt(idx, car.matrix);
+            if (im.material === mats['Car paint']) im.setColorAt(idx, c.setHex(car.color));
+          }
+        }
+        for (const im of slots.near) (im.count = nn), (im.instanceMatrix.needsUpdate = true), im.instanceColor && (im.instanceColor.needsUpdate = true);
+        for (const im of slots.far) (im.count = nf), (im.instanceMatrix.needsUpdate = true), im.instanceColor && (im.instanceColor.needsUpdate = true);
+      }
+    };
   });
-  for (const m of meshes) {
-    m.castShadow = true;
-    m.receiveShadow = true;
-    scene.add(m);
-  }
 }
 
 // ---------- people ----------
-const CLOTHES = [0x2f3b52, 0xb33a3a, 0xe8e2d6, 0x3d6b4f, 0x7a5c99, 0xd4a03a, 0x22252a];
-const SKIN = [0xe0b48f, 0xc69472, 0x9c6b4a];
+// Simple figures with real proportions (about 1.6-1.85 m: legs, body, arms, head, hair), standing
+// or mid-stride, coloured per person. Four instanced meshes for all of them.
+const CLOTHES = [0x2f3b52, 0x9b3a3a, 0xe3ddd0, 0x3d5f4a, 0x6a5a86, 0xc79a3c, 0x22252a, 0x7a8794, 0xb8a58a];
+const TROUSERS = [0x262a33, 0x384b66, 0x4a4038, 0x1d1f22, 0x6b6f75, 0xb9ae9a];
+const SKIN = [0xe2b896, 0xc89878, 0xa06e4f, 0x7d533b];
+const HAIR = [0x1f1a17, 0x3b2b20, 0x5a4330, 0x9a8f86, 0x1a1a1a];
+
+function personParts(stride) {
+  const leg = (side) => {
+    const g = new THREE.CylinderGeometry(0.075, 0.06, 0.86, 7).translate(0, 0.43, 0);
+    g.rotateX(side * stride);
+    return g.translate(side * 0.1, 0.02, 0);
+  };
+  const legs = mergeGeometries([leg(1), leg(-1)].map((g) => g.toNonIndexed()));
+  const torso = new THREE.CylinderGeometry(0.17, 0.14, 0.56, 8).scale(1, 1, 0.62).translate(0, 1.15, 0);
+  const arm = (side) => new THREE.CylinderGeometry(0.05, 0.042, 0.6, 6).rotateX(-side * stride * 0.8).translate(side * 0.215, 1.14, 0);
+  const body = mergeGeometries([torso, arm(1), arm(-1)].map((g) => g.toNonIndexed()));
+  const head = mergeGeometries([
+    new THREE.SphereGeometry(0.105, 10, 8).scale(0.9, 1.1, 1).translate(0, 1.6, 0.0),
+    new THREE.CylinderGeometry(0.045, 0.05, 0.08, 6).translate(0, 1.47, 0),
+  ].map((g) => g.toNonIndexed()));
+  const hair = new THREE.SphereGeometry(0.108, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.55).scale(0.92, 1.05, 1.02).translate(0, 1.625, -0.01);
+  return { legs, body, head, hair };
+}
 
 export function addPeople(scene, list, toScene) {
   const rnd = rng(5);
-  const legs = new THREE.CapsuleGeometry(0.11, 0.7, 3, 6).translate(0, 0.46, 0);
-  const torso = new THREE.CapsuleGeometry(0.17, 0.42, 3, 8).translate(0, 1.18, 0);
-  const head = new THREE.SphereGeometry(0.12, 10, 8).translate(0, 1.66, 0);
   const n = list.length;
-  const mk = (g, color) => new THREE.InstancedMesh(g, new THREE.MeshStandardMaterial({ color, roughness: 0.85 }), n);
-  const L = mk(legs, 0xffffff), T = mk(torso, 0xffffff), H = mk(head, 0xffffff);
-  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3(), c = new THREE.Color();
-  list.forEach(([x, y, z], i) => {
+  const poses = [personParts(0.02), personParts(0.28)]; // standing, walking
+  const mk = (geo, rough) => new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: rough }), n);
+  const sets = poses.map((p) => ({ legs: mk(p.legs, 0.9), body: mk(p.body, 0.85), head: mk(p.head, 0.6), hair: mk(p.hair, 0.8) }));
+  const counts = [0, 0];
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), pp = new THREE.Vector3(), sc = new THREE.Vector3(), c = new THREE.Color();
+  const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
+  list.forEach(([x, y, z]) => {
     const w = toScene(x, y);
-    const h = 0.92 + rnd() * 0.16;
+    const pose = rnd() < 0.45 ? 1 : 0;
+    const set = sets[pose], i = counts[pose]++;
+    const h = 0.93 + rnd() * 0.14; // 1.6 .. 1.85 m
     q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd() * Math.PI * 2);
-    m4.compose(p.set(w.x, z, w.z), q, s.set(1, h, 1));
-    for (const m of [L, T, H]) m.setMatrixAt(i, m4);
-    L.setColorAt(i, c.setHex([0x2a2f3a, 0x3b4a63, 0x4a3f35, 0x1e1f22][Math.floor(rnd() * 4)]));
-    T.setColorAt(i, c.setHex(CLOTHES[Math.floor(rnd() * CLOTHES.length)]));
-    H.setColorAt(i, c.setHex(SKIN[Math.floor(rnd() * SKIN.length)]));
+    m4.compose(pp.set(w.x, z, w.z), q, sc.set(h, h, h));
+    for (const m of Object.values(set)) m.setMatrixAt(i, m4);
+    set.legs.setColorAt(i, c.setHex(pick(TROUSERS)));
+    set.body.setColorAt(i, c.setHex(pick(CLOTHES)));
+    set.head.setColorAt(i, c.setHex(pick(SKIN)));
+    set.hair.setColorAt(i, c.setHex(pick(HAIR)));
   });
-  for (const m of [L, T, H]) {
-    m.castShadow = true;
-    scene.add(m);
-  }
+  sets.forEach((set, k) => {
+    for (const m of Object.values(set)) {
+      m.count = counts[k];
+      m.castShadow = true;
+      m.receiveShadow = true;
+      m.frustumCulled = false;
+      scene.add(m);
+    }
+  });
 }

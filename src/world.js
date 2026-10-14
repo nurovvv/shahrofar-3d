@@ -1,63 +1,64 @@
 // Sky, sun, trees, cars and people. Ground, roads, river and neighbours come with the model.
+//
+// Light: the sky is an HDRI (Poly Haven, CC0) that lights the scene through the environment map
+// and is the background; its sun disc was taken out (scripts/build_web_assets.py) and replaced by
+// a directional light from the same direction, so the sun casts shadows and is counted once.
 import * as THREE from 'three';
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { CARS, PEOPLE, TREES, toScene } from './config.js';
 import { addCars, addPeople, addTrees } from './props.js';
+import { Q } from './quality.js';
+import skyInfo from '../public/env/sky.json';
 
-export function buildWorld(scene) {
-  // sky dome
-  const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(2500, 32, 16),
-    new THREE.ShaderMaterial({
-      side: THREE.BackSide,
-      depthWrite: false,
-      uniforms: {
-        top: { value: new THREE.Color(0x5d9bd6) },
-        bottom: { value: new THREE.Color(0xe3edf5) },
-      },
-      vertexShader: /* glsl */ `
-        varying vec3 vDir;
-        void main() {
-          vDir = normalize(position);
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }`,
-      fragmentShader: /* glsl */ `
-        uniform vec3 top;
-        uniform vec3 bottom;
-        varying vec3 vDir;
-        void main() {
-          float h = pow(clamp(vDir.y, 0.0, 1.0), 0.55);
-          gl_FragColor = vec4(mix(bottom, top, h), 1.0);
-          #include <colorspace_fragment>
-        }`,
-    }),
-  );
-  sky.renderOrder = -1;
-  scene.add(sky);
-  sky.userData.isSky = true;
-  scene.fog = new THREE.Fog(0xdfe8f0, 450, 1600);
+const ENV = `${import.meta.env.BASE_URL}env/`;
+// sky radiance -> scene: one factor for background, ambient light and reflections alike
+const SKY_INTENSITY = 1.0;
+const SUN_INTENSITY = 3.4;
 
-  // lights
-  scene.add(new THREE.HemisphereLight(0xe2efff, 0x8d8068, 0.9));
-  // morning sun from the east-south-east, like on the marketing renders
-  const sun = new THREE.DirectionalLight(0xfff0dc, 2.8);
-  sun.position.set(150, 120, 60);
+export function buildWorld(scene, renderer) {
+  const sunDir = new THREE.Vector3(...skyInfo.sun_dir).normalize();
+
+  // haze towards the horizon, the colour of the low sky
+  scene.fog = new THREE.FogExp2(0xc9d6e2, 0.00042);
+  scene.background = new THREE.Color(0xb9cde0); // until the sky is in
+  scene.backgroundIntensity = SKY_INTENSITY;
+  scene.environmentIntensity = SKY_INTENSITY;
+
+  const sun = new THREE.DirectionalLight(0xfff1df, SUN_INTENSITY);
+  sun.position.copy(sunDir).multiplyScalar(400);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(4096, 4096);
+  sun.shadow.mapSize.set(Q.shadowMap, Q.shadowMap);
   const sc = sun.shadow.camera;
-  sc.left = -120;
-  sc.right = 120;
-  sc.top = 120;
-  sc.bottom = -120;
-  sc.near = 20;
-  sc.far = 450;
-  sun.shadow.bias = -0.0003;
-  sun.shadow.normalBias = 0.05;
-  scene.add(sun);
+  sc.left = -150;
+  sc.right = 150;
+  sc.top = 150;
+  sc.bottom = -150;
+  sc.near = 150;
+  sc.far = 700;
+  sun.shadow.bias = -0.00025;
+  sun.shadow.normalBias = 0.04;
+  scene.add(sun, sun.target);
+
+  // until the HDRI arrives: a plain sky-coloured ambient so the first frame is not black
+  const fill = new THREE.HemisphereLight(0xd8e6f5, 0x8a8170, 1.2);
+  scene.add(fill);
+
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const ready = new RGBELoader()
+    .loadAsync(`${ENV}sky_${Q.skyRes}.hdr`)
+    .then((hdr) => {
+      hdr.mapping = THREE.EquirectangularReflectionMapping;
+      scene.background = hdr;
+      scene.environment = pmrem.fromEquirectangular(hdr).texture;
+      fill.removeFromParent(); // the sky lights the scene now
+      pmrem.dispose();
+    })
+    .catch((e) => console.warn('sky', e));
 
   // trees, cars and people (positions from the Blender build)
-  addTrees(scene, TREES.protos, TREES.list, toScene);
+  addTrees(scene, TREES.protos, TREES.list, TREES.placed, toScene);
   addCars(scene, CARS, toScene);
   addPeople(scene, PEOPLE, toScene);
 
-  return { sun, sky };
+  return { sun, ready };
 }

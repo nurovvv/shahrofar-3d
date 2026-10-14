@@ -233,6 +233,8 @@ def add_sign(text, p, ang, mats, col, size=1.25, mat='Sign'):
 # ----------------------------------------------------------------------------
 
 def tree(mb, x, y, z, h=5.0, r=1.8, light=False):
+    from . import geom
+    mb = geom.log_tree(mb, x, y, z, h, r, 'small' if light and h < 4.5 else 'broad')
     mb.prism(Point(x, y).buffer(0.18, quad_segs=2), z, z + h * 0.55, 'Trunk')
     leaf = 'Leaves light' if light else 'Leaves'
     mb.blob(x, y, z + h * 0.68, r, r, r * 0.9, leaf, subdiv=1)

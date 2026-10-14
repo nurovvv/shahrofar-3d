@@ -1,0 +1,296 @@
+// PBR look of the complex, by the material names the Blender build exports (blender/complex/materials.py).
+// The model carries geometry, UVs (metres) and plain base values; here every material gets its
+// texture set (public/textures, CC0, see ASSETS.md), real-world tile size, roughness and
+// reflections. Nothing is swapped for a simpler material: the loaded MeshStandardMaterial is
+// configured in place, and names missing from the table keep what the model says.
+import * as THREE from 'three';
+import { Q } from './quality.js';
+import { groundTexture } from './textures.js';
+
+const BASE = `${import.meta.env.BASE_URL}textures/`;
+const loader = new THREE.TextureLoader();
+const sources = new Map(); // `${set}/${kind}` -> Promise<Texture> (one download / GPU upload per file)
+let anisotropy = 8;
+
+function loadMap(set, kind) {
+  const key = `${set}/${kind}`;
+  if (!sources.has(key)) {
+    sources.set(
+      key,
+      loader.loadAsync(`${BASE}${set}/${kind}_${Q.textureSize}.webp`).then((t) => {
+        t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        t.anisotropy = anisotropy;
+        t.colorSpace = kind === 'color' ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+        return t;
+      }),
+    );
+  }
+  return sources.get(key);
+}
+
+// A texture of the set for one tile size (clones share the image and its GPU upload).
+async function map(set, kind, tile) {
+  const t = (await loadMap(set, kind)).clone();
+  t.repeat.set(1 / tile, 1 / tile);
+  t.needsUpdate = true;
+  return t;
+}
+
+// ---------- shader additions ----------
+// vary:   large-scale light/dark and hue drift in world space, so big surfaces are not uniform
+// detile: a second, rotated and scaled read of the colour map blended in by a noise mask (no
+//         visible repeat on lawns and paving)
+// leafy:  a bumpy normal and patchy colour for the shrub and hedge volumes
+const NOISE = /* glsl */ `
+  float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+  float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash12(i), hash12(i + vec2(1, 0)), u.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), u.x), u.y);
+  }
+  float fbm(vec2 p) { return 0.55 * vnoise(p) + 0.3 * vnoise(p * 2.13 + 7.1) + 0.15 * vnoise(p * 4.37 + 3.7); }
+  float hash13(vec3 p) { p = fract(p * .1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
+  float vnoise3(vec3 p) {
+    vec3 i = floor(p), f = fract(p); vec3 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(hash13(i), hash13(i + vec3(1, 0, 0)), u.x), mix(hash13(i + vec3(0, 1, 0)), hash13(i + vec3(1, 1, 0)), u.x), u.y),
+               mix(mix(hash13(i + vec3(0, 0, 1)), hash13(i + vec3(1, 0, 1)), u.x), mix(hash13(i + vec3(0, 1, 1)), hash13(i + vec3(1, 1, 1)), u.x), u.y), u.z);
+  }
+`;
+
+function patch(mat, { vary = 0, detile = false, leafy = false, tint = null } = {}) {
+  if (!vary && !detile && !leafy) return;
+  const tintColor = new THREE.Color(tint ?? '#ffffff');
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uVary = { value: vary };
+    sh.uniforms.uTint = { value: tintColor };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;')
+      .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
+        vec4 wp = vec4(transformed, 1.0);
+        #ifdef USE_INSTANCING
+          wp = instanceMatrix * wp;
+        #endif
+        vWorldPos = (modelMatrix * wp).xyz;`);
+    let frag = sh.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vWorldPos;\nuniform float uVary;\nuniform vec3 uTint;\n${NOISE}`);
+    if (detile) {
+      frag = frag.replace('#include <map_fragment>', `
+        #ifdef USE_MAP
+          vec4 t1 = texture2D(map, vMapUv);
+          vec2 uv2 = mat2(0.81, -0.59, 0.59, 0.81) * vMapUv * 0.43 + vec2(0.37, 0.71);
+          vec4 t2 = texture2D(map, uv2);
+          float w = smoothstep(0.38, 0.62, fbm(vWorldPos.xz * 0.11));
+          diffuseColor *= mix(t1, t2, w);
+        #endif`);
+    }
+    frag = frag.replace('#include <color_fragment>', `#include <color_fragment>
+      {
+        float m = fbm(vWorldPos.xz * 0.045 + vWorldPos.y * 0.02);
+        float s = fbm(vWorldPos.xz * 0.31 + 11.0);
+        diffuseColor.rgb *= 1.0 + uVary * ((m - 0.5) * 1.6 + (s - 0.5) * 0.6);
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * uTint, smoothstep(0.45, 0.8, m));
+      }`);
+    if (leafy) {
+      frag = frag
+        .replace('#include <color_fragment>', `#include <color_fragment>
+          float leafA = vnoise3(vWorldPos * 7.0), leafB = vnoise3(vWorldPos * 2.3 + 5.0);
+          diffuseColor.rgb *= 0.62 + 0.55 * leafA * (0.6 + 0.4 * leafB);`)
+        .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+          {
+            vec3 q = vWorldPos * 9.0;
+            vec3 g = vec3(vnoise3(q + vec3(0.13, 0, 0)) - vnoise3(q - vec3(0.13, 0, 0)),
+                          vnoise3(q + vec3(0, 0.13, 0)) - vnoise3(q - vec3(0, 0.13, 0)),
+                          vnoise3(q + vec3(0, 0, 0.13)) - vnoise3(q - vec3(0, 0, 0.13)));
+            normal = normalize(normal - mat3(viewMatrix) * g * 2.2);
+          }`);
+    }
+    sh.fragmentShader = frag;
+  };
+  mat.customProgramCacheKey = () => `v${vary}d${+detile}l${+leafy}${tintColor.getHexString()}`;
+}
+
+// ---------- the table ----------
+// set: texture set in public/textures; tile: metres per repeat of the texture (the model's UVs
+// are in metres); color: multiplies the colour map (tinted sets are neutral grey); normal: normal
+// map strength; roughness/metalness: multiply the maps (or set the value when there is no map).
+// Facade glass is MeshPhysicalMaterial for one reason: `ior`. Coated architectural glass reflects
+// more than plain float glass (F0 ~0.04); ior 2.0 gives F0 ~0.11, so the sky and the clouds show in
+// the windows as on a real facade, with the dark rooms behind at steep angles. Nothing else of
+// the physical material (transmission, clearcoat...) is switched on, so it costs about the same.
+const glass = (color, roughness = 0.035, extra = {}) => ({ glass: true, physical: { ior: 2.0 }, color, roughness, metalness: 0, env: 1.4, ...extra });
+const LIB = {
+  // facades: smooth render on the towers, painted concrete slab edges, powder-coated frames
+  Terracotta: { set: 'plaster', tile: 2.2, color: '#b67d68', roughness: 1, normal: 0.55, vary: 0.05, env: 0.6 },
+  'Terracotta dark': { set: 'plaster', tile: 2.2, color: '#6f4132', roughness: 1, normal: 0.55, vary: 0.05, env: 0.6 },
+  'White band': { set: 'plaster', tile: 2.2, color: '#ece7de', roughness: 0.85, normal: 0.3, vary: 0.025, env: 0.7 },
+  'Plant room': { set: 'plaster', tile: 2.2, color: '#6b463a', roughness: 1, normal: 0.5 },
+  'Stone fin': { set: 'concrete', tile: 3, color: '#e3d6c2', roughness: 0.9, normal: 0.5 },
+  Frame: { color: '#d7d1c6', roughness: 0.42, metalness: 0, env: 0.8 },
+  Metal: { color: '#9aa0a5', roughness: 0.32, metalness: 0.9, env: 1 },
+  'Shop frame': { color: '#2b2f33', roughness: 0.38, metalness: 0.7 },
+  'Lamp white': { color: '#ecebe6', roughness: 0.35, metalness: 0.2 },
+  Bollard: { color: '#e8e7e2', roughness: 0.5 },
+  Roof: { set: 'concrete', tile: 3, color: '#c97570', roughness: 0.95, normal: 0.6, vary: 0.04 },
+  'Solar panel': { color: '#1b2232', roughness: 0.18, metalness: 0.2, env: 1.1 },
+  // glass: dark body seen through, reflections of the sky do the rest; slight tints only
+  'Window glass': glass('#20292c'),
+  'Curtain glass': glass('#1f3431'),
+  'Shop glass': glass('#1d2427', 0.03),
+  'Shop window': glass('#56605d', 0.05),
+  'Gallery glass': glass('#7f8a88', 0.06),
+  'Stained orange': glass('#8a4a22', 0.05),
+  'Stained pink': glass('#86364f', 0.05),
+  'Stained blue': glass('#27427c', 0.05),
+  'Stained violet': glass('#53357a', 0.05),
+  'Railing glass': { color: '#c8d8dc', roughness: 0.04, opacity: 0.2, transparent: true, env: 1 },
+  'Railing glass dark': { color: '#2d3d46', roughness: 0.04, opacity: 0.72, transparent: true, env: 1 },
+  // ground
+  Asphalt: { set: 'asphalt', tile: 30, color: '#d9d9d9', roughness: 1, normal: 0.8, vary: 0.06 },
+  'Road line': { color: '#e4e2db', roughness: 0.7 },
+  Sidewalk: { set: 'pavers', tile: 1.9, color: '#e2d8d2', roughness: 1, normal: 0.8, vary: 0.07, detile: true },
+  Paving: { set: 'pavers', tile: 1.9, color: '#e8dfd2', roughness: 1, normal: 0.8, vary: 0.07, detile: true },
+  Kerb: { set: 'concrete', tile: 2, color: '#d9d4ca', roughness: 0.95, normal: 0.6 },
+  Lawn: { set: 'grass', tile: 2.4, color: '#88a55a', roughness: 1, normal: 0.9, vary: 0.12, detile: true, tint: '#c4bb78' },
+  Grass: { set: 'grass', tile: 2.4, color: '#7f9a52', roughness: 1, normal: 0.9, vary: 0.14, detile: true, tint: '#c4bb78' },
+  Embankment: { set: 'concrete', tile: 4, color: '#c4b8a6', roughness: 1, normal: 0.7, vary: 0.08 },
+  Bridge: { set: 'concrete', tile: 4, color: '#bdb9b1', roughness: 0.95, normal: 0.6, vary: 0.05 },
+  Planter: { set: 'concrete', tile: 2, color: '#dcd7cd', roughness: 0.9, normal: 0.5 },
+  // podium deck, shop front and promenade (render 2)
+  'Deck paving': { set: 'patio', tile: 2.15, color: '#f0d5b8', roughness: 1, normal: 0.6, vary: 0.05 },
+  'Deck stone': { set: 'patio', tile: 2.15, color: '#e8c9a4', roughness: 1, normal: 0.6, vary: 0.05 },
+  Promenade: { set: 'paving', tile: 2, color: '#f2e2d8', roughness: 1, normal: 0.7, vary: 0.05, detile: true },
+  Cobble: { set: 'setts', tile: 1.1, color: '#ece8e2', roughness: 1, normal: 0.6, vary: 0.05, detile: true },
+  Wood: { set: 'deck', tile: 1.8, color: '#d9b08c', roughness: 0.9, normal: 0.6 },
+  'Lattice wood': { set: 'deck', tile: 1.8, color: '#f0d2ad', roughness: 0.85, normal: 0.4 },
+  'Rubber blue': { set: 'rubber', tile: 2, color: '#3f6ea8', roughness: 1, normal: 0.7 },
+  'Play orange': { set: 'rubber', tile: 2, color: '#c0603e', roughness: 1, normal: 0.7 },
+  'Play blue': { set: 'rubber', tile: 2, color: '#2f6da8', roughness: 0.8, normal: 0.5 },
+  Neighbour: { set: 'concrete', tile: 6, color: '#c2c5c6', roughness: 0.92, normal: 0.25, vary: 0.03, env: 0.6 },
+  'Neighbour solid': { set: 'concrete', tile: 4, color: '#e0ddd6', roughness: 0.92, normal: 0.3, vary: 0.03, env: 0.6 },
+  // plants in the model (balcony planters, hedges, deck planting)
+  Shrub: { color: '#3c5a26', roughness: 0.95, leafy: true, env: 0.35 },
+  Leaves: { color: '#36531f', roughness: 0.95, leafy: true, env: 0.35 },
+  'Leaves light': { color: '#557a2a', roughness: 0.95, leafy: true, env: 0.35 },
+  Trunk: { color: '#4a3a2e', roughness: 0.95 },
+  // water: the sky in it does the work
+  River: { water: true, color: '#20363c', roughness: 0.06, tile: 9, env: 1 },
+  // white flecks drawn on the river of the stylised render: not part of a real river surface
+  Foam: { hidden: true },
+  'Pool water': { water: true, color: '#2c8fa6', roughness: 0.03, tile: 2.5, env: 1 },
+};
+
+// textures made on a canvas (textures.js) for surfaces with no photographed set
+const CANVAS = { 'Pool mosaic': 'mosaic', 'Copper screen': 'copper' };
+
+let waterNormal = null;
+export const water = []; // normal maps to scroll each frame
+
+function waterNormalMap() {
+  if (waterNormal) return waterNormal;
+  // tileable ripples: a few crossing sine waves with integer frequencies
+  const N = 256, c = document.createElement('canvas');
+  c.width = c.height = N;
+  const g = c.getContext('2d'), img = g.createImageData(N, N);
+  const waves = [[3, 1, 0.9], [-2, 4, 0.7], [5, -3, 0.45], [1, 7, 0.3], [-7, -2, 0.25], [9, 5, 0.15]];
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      let dx = 0, dy = 0;
+      for (const [kx, ky, a] of waves) {
+        const ph = ((kx * x + ky * y) / N) * Math.PI * 2 + kx * 1.7;
+        dx += a * kx * Math.cos(ph);
+        dy += a * ky * Math.cos(ph);
+      }
+      const nx = -dx * 0.035, ny = -dy * 0.035, l = Math.hypot(nx, ny, 1);
+      const i = (y * N + x) * 4;
+      img.data[i] = (nx / l * 0.5 + 0.5) * 255;
+      img.data[i + 1] = (ny / l * 0.5 + 0.5) * 255;
+      img.data[i + 2] = (1 / l * 0.5 + 0.5) * 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  waterNormal = new THREE.CanvasTexture(c);
+  waterNormal.wrapS = waterNormal.wrapT = THREE.RepeatWrapping;
+  waterNormal.colorSpace = THREE.NoColorSpace;
+  return waterNormal;
+}
+
+/**
+ * Configure one material of the model. Returns a promise that settles when its textures are in
+ * (the model shows at once with its base colours, textures fade in as they arrive).
+ */
+const replaced = new Map();
+/** The material a mesh should use: the loaded one, or for facade glass its physical twin. */
+export function materialFor(m) {
+  const spec = LIB[m.name];
+  if (!spec?.physical) return m;
+  if (!replaced.has(m)) {
+    const p = new THREE.MeshPhysicalMaterial();
+    THREE.MeshStandardMaterial.prototype.copy.call(p, m); // every standard property, as loaded
+    p.name = m.name;
+    p.userData = { ...m.userData };
+    Object.assign(p, spec.physical);
+    replaced.set(m, p);
+  }
+  return replaced.get(m);
+}
+
+export function setupMaterial(m, renderer) {
+  anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  const spec = LIB[m.name];
+  if (spec?.hidden) {
+    m.visible = false;
+    return Promise.resolve();
+  }
+  if (CANVAS[m.name]) {
+    m.map = groundTexture(CANVAS[m.name]);
+    m.color.set(0xffffff);
+    if (m.name === 'Copper screen') {
+      m.metalness = 0.55;
+      m.roughness = 0.42;
+    }
+    m.needsUpdate = true;
+  }
+  if (!spec) return Promise.resolve();
+  if (spec.color) m.color.set(spec.color);
+  if (spec.roughness !== undefined) m.roughness = spec.roughness;
+  if (spec.metalness !== undefined) m.metalness = spec.metalness;
+  m.envMapIntensity = spec.env ?? 0.85;
+  // the model's glass carries KHR_materials_specular from Blender; plain F0 = 0.04 is right for glass
+  if (m.specularIntensity !== undefined && spec.glass) m.specularIntensity = 1;
+  if (spec.transparent) {
+    m.transparent = true;
+    m.opacity = spec.opacity;
+    m.depthWrite = false;
+    m.side = THREE.FrontSide; // the rails are modelled as two faces back to back
+  } else {
+    m.transparent = false;
+    m.opacity = 1;
+    m.depthWrite = true;
+  }
+  if (m.emissive && !m.name.startsWith('Lamp') && !m.name.startsWith('Sign')) m.emissiveIntensity = m.name.startsWith('Stained') ? 0.08 : m.emissiveIntensity;
+  patch(m, spec);
+  if (spec.water) {
+    const n = waterNormalMap().clone();
+    n.repeat.set(1 / spec.tile, 1 / spec.tile);
+    n.needsUpdate = true;
+    m.normalMap = n;
+    m.normalScale.set(0.35, 0.35);
+    water.push(n);
+    m.needsUpdate = true;
+    return Promise.resolve();
+  }
+  if (!spec.set) {
+    m.needsUpdate = true;
+    return Promise.resolve();
+  }
+  return Promise.all([map(spec.set, 'color', spec.tile), map(spec.set, 'normal', spec.tile), map(spec.set, 'orm', spec.tile)])
+    .then(([color, normal, orm]) => {
+      m.map = color;
+      m.normalMap = normal;
+      m.normalScale.set(spec.normal ?? 1, spec.normal ?? 1);
+      m.roughnessMap = orm; // green channel
+      m.aoMap = orm; // red channel: the surface's own small-scale occlusion (indirect light only)
+      m.aoMapIntensity = 0.8;
+      m.needsUpdate = true;
+    })
+    .catch((e) => console.warn('texture set', spec.set, e));
+}

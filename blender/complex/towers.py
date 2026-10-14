@@ -49,21 +49,33 @@ def rail_segments(T, slab, exclude):
     return [list(l.coords) for l in lines if l.length > 0.3]
 
 
-def add_rails(mb, segs, z, h=RAIL, mat='Railing glass', post_step=None):
+def add_rails(mb, segs, z, h=RAIL, mat='Railing glass', post_step=1.2):
     for seg in segs:
         # solid white upstand, then glass
         if len(seg) > 1:
             mb.tube(seg, [z - 0.05] * len(seg), [z + FASCIA] * len(seg), 0.16, 'White band')
         mb.ribbon(seg, z + FASCIA, z + h, mat, double=True)
-        # slim metal handrail
+        # slim metal handrail on posts (glass held between them)
         zs0 = [z + h - 0.04] * len(seg)
         zs1 = [z + h + 0.02] * len(seg)
         if len(seg) > 1:
             mb.tube(seg, zs0, zs1, 0.06, 'Frame')
+        if post_step and len(seg) > 1:
+            P = np.array(seg, float)
+            d = np.linalg.norm(np.diff(P, axis=0), axis=1)
+            s = np.concatenate([[0.0], np.cumsum(d)])
+            total = s[-1]
+            for k in range(int(total // post_step) + 1):
+                at = min(total, k * post_step + (total - post_step * int(total // post_step)) / 2)
+                i = min(int(np.searchsorted(s, at, side='right')) - 1, len(d) - 1)
+                f = (at - s[i]) / max(d[i], 1e-9)
+                q = P[i] + (P[i + 1] - P[i]) * f
+                t = (P[i + 1] - P[i]) / max(d[i], 1e-9)
+                mb.box(q[0], q[1], z + FASCIA, 0.04, 0.05, h - FASCIA - 0.04, 'Metal', rot=math.atan2(t[1], t[0]))
 
 
 def slab_band(mb, slab, z, top='White band'):
-    mb.prism(slab, z - SLAB_BELOW, z + SLAB, 'White band', top, 'White band')
+    mb.prism_chamfer(slab, z - SLAB_BELOW, z + SLAB, 'White band', top, 'White band', c=0.025)
 
 
 # ----------------------------------------------------------------------------

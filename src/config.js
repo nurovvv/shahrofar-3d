@@ -14,7 +14,7 @@ export const toScene = (x, y) => ({ x: x - CX, z: -(y - CY) });
 export const TOWERS = complex.towers;
 export const RESIDENTIAL = TOWERS.filter((t) => !t.hotel);
 export const towerByKey = Object.fromEntries(TOWERS.map((t) => [t.key, t]));
-export const TREES = { protos: complex.tree_protos, list: complex.trees };
+export const TREES = { protos: complex.tree_protos, list: complex.trees, placed: complex.trees_placed ?? [] };
 export const CARS = complex.cars ?? [];
 export const PEOPLE = complex.people ?? [];
 

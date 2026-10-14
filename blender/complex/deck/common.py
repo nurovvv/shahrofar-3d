@@ -39,7 +39,9 @@ def pave(mb, poly, z, mat, t=PAVE_T):
 def tree(mb, x, y, z, h=5.0, r=1.8, leaf='Leaves', rnd=None, kind='round'):
     """Deck / street tree: trunk with a few branches and a crown of lumpy clumps."""
     import random
+    from .. import geom
     rnd = rnd or random.Random(int(x * 13 + y * 7))
+    mb = geom.log_tree(mb, x, y, z, h, r, 'conifer' if kind == 'cone' else 'broad')
     rod(mb, (x, y, z), (x, y, z + h * 0.55), 0.13, 'Trunk')
     for k in range(3):
         a = k * 2.1 + rnd.uniform(-0.3, 0.3)

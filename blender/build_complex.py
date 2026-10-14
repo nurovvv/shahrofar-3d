@@ -184,6 +184,9 @@ def main():
     scene = bpy.context.scene
     scene.unit_settings.system = 'METRIC'
     mats = build_materials()
+    from complex import geom
+    # the web build draws trees from photographs: collect them instead of modelling (not for stills)
+    geom.TREE_LOG = None if args.render else []
     root = get_collection('Shahrofar complex')
     # blocks V and B from the architect's floor plans, the hotel (not for sale) from the renders
     towers = [build_drawn_tower('V', mats, root), build_drawn_tower('B', mats, root), build_hotel(TOWER_A, mats, root)]
@@ -216,6 +219,7 @@ def main():
     with open(out + '.json', 'w') as f:
         json.dump(dict(site_centre=SITE_CENTRE, towers=towers,
                        tree_protos=[dict(h=h, r=r, light=l) for h, r, l in site.TREE_PROTOS], trees=site.TREES,
+                       trees_placed=geom.TREE_LOG or [],
                        cars=site.CARS, people=site.PEOPLE), f)
     if not args.no_glb:
         # the viewer draws trees, cars and people itself (instanced), so leave them out of the GLB

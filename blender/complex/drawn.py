@@ -73,9 +73,17 @@ def U(list_of_pts, grow=0.0):
 # Facade
 # ----------------------------------------------------------------------------
 
+REVEAL = 0.14   # windows sit this far back from the facade face (reveal depth)
+SILL = 0.85     # window sill above floor level (as in the viewer's floor plans)
+HEAD = 0.35     # wall above the window head, below the slab
+
+
 def facade(mb, enclosure, windows, glazing, z0, h, step=0.3, stain=None):
     """Walls along the facade line: terracotta, punched windows where the plan draws them,
-    floor-to-ceiling glass along the curved glazing behind the balconies."""
+    floor-to-ceiling glass along the curved glazing behind the balconies.
+    Windows are set back by REVEAL with sill, head and jamb returns, a frame in the glass
+    plane, mullions about every metre and a metal drip sill outside; textures run on along
+    the facade (u = metres along the ring)."""
     pts = resample(ring_coords(enclosure), step)
     n = len(pts)
     cls = []
@@ -90,47 +98,66 @@ def facade(mb, enclosure, windows, glazing, z0, h, step=0.3, stain=None):
             cls.append('wall')
     zt = z0 + h - SLAB_BELOW
     zb = z0 + SLAB
-    for i in range(n):
-        a, b = pts[i], pts[(i + 1) % n]
-        c = cls[i]
-        if c == 'wall':
-            mb.quad_wall(a, b, zb, zt, 'Terracotta')
-        elif c == 'win':
-            mb.quad_wall(a, b, zb, z0 + 0.85, 'Terracotta')
-            mb.quad_wall(a, b, z0 + 0.85, zt - 0.35, (stain and stain(a, b)) or 'Window glass')
-            mb.quad_wall(a, b, zt - 0.35, zt, 'Terracotta')
-        else:
-            mb.quad_wall(a, b, zb, zt, 'Window glass')
-    # frames: jambs where a window run starts/ends, mullions inside runs, sill and head bars
+    ys, yh = z0 + SILL, zt - HEAD
+    P = np.array(pts, float)
+    seg = np.roll(P, -1, axis=0) - P
+    seg_len = np.linalg.norm(seg, axis=1)
+    us = np.concatenate([[0.0], np.cumsum(seg_len)])
+    t_seg = seg / np.maximum(seg_len, 1e-9)[:, None]
+    out_seg = np.stack([t_seg[:, 1], -t_seg[:, 0]], axis=1)          # outward normal (CCW ring)
+    out_v = out_seg + np.roll(out_seg, 1, axis=0)                     # at the points: mean of both sides
+    out_v /= np.maximum(np.linalg.norm(out_v, axis=1), 1e-9)[:, None]
+    inner = P - out_v * REVEAL                                        # glass line, same points set back
+    T = lambda q: (float(q[0]), float(q[1]))
     run_len = 0.0
     for i in range(n):
-        a, b = np.array(pts[i]), np.array(pts[(i + 1) % n])
-        d = b - a
-        L = np.linalg.norm(d)
-        if L < 1e-6:
-            continue
-        t = d / L
-        nrm = np.array([t[1], -t[0]])
-        rot = math.atan2(t[1], t[0])
-        c, prev = cls[i], cls[i - 1]
+        j = (i + 1) % n
+        a, b, c = T(P[i]), T(P[j]), cls[i]
+        u = float(us[i])
+        L = float(seg_len[i])
         if c == 'wall':
+            mb.quad_wall(a, b, zb, zt, 'Terracotta', u0=u)
             run_len = 0.0
             continue
-        y0 = z0 + 0.85 if c == 'win' else zb
-        y1 = zt - 0.35 if c == 'win' else zt
-        q = a + nrm * 0.05
-        if prev != c or run_len > (1.0 if c == 'win' else 1.5):
-            mb.box(q[0], q[1], y0, 0.07, 0.1, y1 - y0, 'Frame', rot=rot)
+        if c == 'glaze':
+            mb.quad_wall(a, b, zb, zt, 'Window glass', u0=u)
+            rot = math.atan2(t_seg[i][1], t_seg[i][0])
+            if cls[i - 1] != c or run_len > 1.5:
+                q = P[i] - out_seg[i] * 0.03
+                mb.box(q[0], q[1], zb, 0.07, 0.1, zt - zb, 'Frame', rot=rot)
+                run_len = 0.0
+            run_len += L
+            if cls[j] != c:
+                q = P[j] - out_seg[i] * 0.03
+                mb.box(q[0], q[1], zb, 0.07, 0.1, zt - zb, 'Frame', rot=rot)
+            continue
+        # punched window: wall below and above, glass set back, returns all round
+        ai, bi = T(inner[i]), T(inner[j])
+        mb.quad_wall(a, b, zb, ys, 'Terracotta', u0=u)
+        mb.quad_wall(a, b, yh, zt, 'Terracotta', u0=u)
+        mb.quad_wall(ai, bi, ys, yh, (stain and stain(a, b)) or 'Window glass', u0=u)
+        mb.face([(*a, ys), (*b, ys), (*bi, ys), (*ai, ys)], 'Terracotta', [(u, 0), (u + L, 0), (u + L, REVEAL), (u, REVEAL)])
+        mb.face([(*ai, yh), (*bi, yh), (*b, yh), (*a, yh)], 'Terracotta', [(u, REVEAL), (u + L, REVEAL), (u + L, 0), (u, 0)])
+        if cls[i - 1] != 'win':
+            mb.quad_wall(a, ai, ys, yh, 'Terracotta', u0=0.0)
+        if cls[j] != 'win':
+            mb.quad_wall(bi, b, ys, yh, 'Terracotta', u0=0.0)
+        # frame in the glass plane: sill and head bars, jambs at the ends, mullions inside the run
+        rot = math.atan2(t_seg[i][1], t_seg[i][0])
+        mid = (inner[i] + inner[j]) / 2
+        mb.box(mid[0], mid[1], ys, L + 0.01, 0.09, 0.06, 'Frame', rot=rot)
+        mb.box(mid[0], mid[1], yh - 0.06, L + 0.01, 0.09, 0.06, 'Frame', rot=rot)
+        # drip sill outside: from the glass out 5 cm past the face
+        ds = (P[i] + P[j]) / 2 + out_seg[i] * ((0.05 - REVEAL) / 2)
+        mb.box(ds[0], ds[1], ys - 0.025, L + 0.01, REVEAL + 0.05, 0.025, 'Metal', rot=rot)
+        if cls[i - 1] != 'win' or run_len > 1.05:
+            q = inner[i] + t_seg[i] * (0.035 if cls[i - 1] != 'win' else 0.0)
+            mb.box(q[0], q[1], ys, 0.07, 0.09, yh - ys, 'Frame', rot=rot)
             run_len = 0.0
         run_len += L
-        if c == 'win':
-            m = (a + b) / 2 + nrm * 0.06
-            mb.box(m[0], m[1], y0 - 0.06, L + 0.02, 0.14, 0.06, 'Frame', rot=rot)
-            mb.box(m[0], m[1], y1, L + 0.02, 0.1, 0.06, 'Frame', rot=rot)
-        nxt = cls[(i + 1) % n]
-        if nxt != c:
-            q = b + nrm * 0.05
-            mb.box(q[0], q[1], y0, 0.07, 0.1, y1 - y0, 'Frame', rot=rot)
+        if cls[j] != 'win':
+            q = inner[j] - t_seg[i] * 0.035
+            mb.box(q[0], q[1], ys, 0.07, 0.09, yh - ys, 'Frame', rot=rot)
 
 
 def balcony_rails(slab, enclosure):

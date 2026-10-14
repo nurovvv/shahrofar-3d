@@ -7,26 +7,39 @@ import { loadComplex } from './building.js';
 import { buildFloor } from './floor.js';
 import { WalkControls } from './walk.js';
 import { drawPlan, planTransform } from './plan.js';
+import { Q, setQuality } from './quality.js';
+import { createRenderer, createPipeline } from './render.js';
+import { water } from './materials.js';
+import { updateCars } from './props.js';
 
 const $ = (s) => document.querySelector(s);
 const roomsText = (n) => `${n}-room`;
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
 // ---------- renderer / scene ----------
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setSize(innerWidth, innerHeight);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+// No WebGL (old browser, GPU blocked, context refused): say so and show a still instead of an
+// endless loading indicator. createRenderer throws in that case.
+let renderer;
+try {
+  renderer = createRenderer();
+} catch (err) {
+  console.error(err);
+  document.body.classList.add('no-webgl');
+  $('#loading').hidden = true;
+  $('#nogl').hidden = false;
+  throw err;
+}
 $('#stage').appendChild(renderer.domElement);
 const canvas = renderer.domElement;
+canvas.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();
+  $('#nogl').hidden = false;
+  $('#nogl .why').textContent = 'The graphics card stopped the 3D view (too little memory, or the tab was in the background for long).';
+});
 
 const scene = new THREE.Scene();
-const pmrem = new THREE.PMREMGenerator(renderer);
 
-const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.5, 6000);
+const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 1, 6000);
 // the aerial view of the marketing render: from the land side, river and bridge behind
 const HOME = { pos: new THREE.Vector3(-12, 150, 190), target: new THREE.Vector3(5, 28, -5) };
 camera.position.copy(HOME.pos);
@@ -41,25 +54,13 @@ controls.maxPolarAngle = Math.PI * 0.48;
 controls.autoRotate = true;
 controls.autoRotateSpeed = 0.35;
 
-const world = buildWorld(scene);
-// reflections: the sky dome with a bright sun, so glass and car paint reflect the real sky
-{
-  const envScene = new THREE.Scene();
-  envScene.add(world.sky.clone());
-  const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(60, 16, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(14, 13, 11) }));
-  sunDisc.position.copy(world.sun.position).setLength(1400);
-  envScene.add(sunDisc);
-  const ground = new THREE.Mesh(new THREE.CircleGeometry(2400, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x55603a }));
-  ground.position.y = -40;
-  envScene.add(ground);
-  scene.environment = pmrem.fromScene(envScene, 0.02).texture;
-  scene.environmentIntensity = 0.95;
-}
+const world = buildWorld(scene, renderer);
+const pipeline = createPipeline(renderer, scene, camera);
 const walk = new WalkControls(camera, canvas);
 
 let building = null; // set once the model has loaded
 const loadingEl = $('#loading');
-loadComplex(apartments, (k) => (loadingEl.querySelector('b').textContent = `${Math.round(k * 100)}%`))
+loadComplex(apartments, renderer, (k) => (loadingEl.querySelector('b').textContent = `${Math.round(k * 100)}%`))
   .then((b) => {
     building = b;
     scene.add(b.group);
@@ -68,8 +69,16 @@ loadComplex(apartments, (k) => (loadingEl.querySelector('b').textContent = `${Ma
   })
   .catch((err) => {
     console.error(err);
-    loadingEl.textContent = 'Could not load the 3D model.';
+    loadingEl.textContent = 'Could not load the 3D model. Check the connection and reload the page.';
   });
+
+// graphics level switch (bottom right)
+{
+  const b = $('#quality');
+  b.textContent = Q.level === 'high' ? 'Graphics: high' : 'Graphics: light';
+  b.title = Q.level === 'high' ? 'Switch to the light mode (faster on phones and older computers)' : 'Switch to full quality';
+  b.onclick = () => setQuality(Q.level === 'high' ? 'low' : 'high');
+}
 
 // ---------- state ----------
 const state = {
@@ -398,6 +407,7 @@ function enterWalk(a) {
     controls.enabled = false;
     camera.fov = 72;
     camera.near = 0.05;
+    pipeline.walk(true);
     camera.updateProjectionMatrix();
     walk.start(walkInterior, scene);
     $('#ext-ui').hidden = true;
@@ -414,7 +424,8 @@ function exitWalk() {
     walkInterior.dispose();
     walkInterior = null;
     camera.fov = 38;
-    camera.near = 0.5;
+    camera.near = 1;
+    pipeline.walk(false);
     camera.updateProjectionMatrix();
     controls.enabled = true;
     $('#ext-ui').hidden = false;
@@ -577,12 +588,14 @@ canvas.addEventListener('pointerup', (e) => {
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
+  pipeline.setSize(innerWidth, innerHeight);
 });
 
 const clock = new THREE.Clock();
 const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+renderer.info.autoReset = false; // count draw calls over all passes of a frame
 renderer.setAnimationLoop(() => {
+  renderer.info.reset();
   const dt = Math.min(clock.getDelta(), 0.05);
   if (tween) {
     tween.t += dt;
@@ -604,7 +617,9 @@ renderer.setAnimationLoop(() => {
     else camera.lookAt(controls.target);
     if (building) updateLabels();
   }
-  renderer.render(scene, camera);
+  for (const n of water) n.offset.x += dt * 0.006, n.offset.y += dt * 0.004;
+  updateCars(camera);
+  pipeline.render(dt);
 });
 
 refresh();
@@ -614,7 +629,7 @@ lastInteraction = STILL ? Infinity : -1e9;
 
 // handles for the automated checks in tools/ (screenshots, picking and walk tests)
 window.__app = {
-  THREE, scene, camera, controls, renderer, state, walk, apartments,
+  THREE, scene, camera, controls, renderer, state, walk, apartments, pipeline, world, quality: Q,
   get building() { return building; },
   get interior() { return walkInterior; },
   selectFloor, selectApt, enterWalk, exitWalk, goOverview,
