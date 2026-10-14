@@ -112,10 +112,11 @@ function patch(mat, { vary = 0, detile = false, leafy = false, tint = null } = {
 // are in metres); color: multiplies the colour map (tinted sets are neutral grey); normal: normal
 // map strength; roughness/metalness: multiply the maps (or set the value when there is no map).
 // Facade glass is MeshPhysicalMaterial for one reason: `ior`. Coated architectural glass reflects
-// more than plain float glass (F0 ~0.04); ior 2.0 gives F0 ~0.11, so the sky and the clouds show in
-// the windows as on a real facade, with the dark rooms behind at steep angles. Nothing else of
+// more than plain float glass (F0 ~0.04); ior 2.2 gives F0 ~0.14, so the sky and the clouds show in
+// the windows as on a real facade, with the rooms behind at steep angles. The base colour is the room
+// seen through the glass in daylight (a tenth or so of the brightness outside), not a glass tint. Nothing else of
 // the physical material (transmission, clearcoat...) is switched on, so it costs about the same.
-const glass = (color, roughness = 0.035, extra = {}) => ({ glass: true, physical: { ior: 2.0 }, color, roughness, metalness: 0, env: 1.4, ...extra });
+const glass = (color, roughness = 0.035, extra = {}) => ({ glass: true, physical: { ior: 2.2 }, color, roughness, metalness: 0, env: 1.3, ...extra });
 const LIB = {
   // facades: smooth render on the towers, painted concrete slab edges, powder-coated frames
   Terracotta: { set: 'plaster', tile: 2.2, color: '#b67d68', roughness: 1, normal: 0.55, vary: 0.05, env: 0.6 },
@@ -131,9 +132,9 @@ const LIB = {
   Roof: { set: 'concrete', tile: 3, color: '#c97570', roughness: 0.95, normal: 0.6, vary: 0.04 },
   'Solar panel': { color: '#1b2232', roughness: 0.18, metalness: 0.2, env: 1.1 },
   // glass: dark body seen through, reflections of the sky do the rest; slight tints only
-  'Window glass': glass('#20292c'),
-  'Curtain glass': glass('#1f3431'),
-  'Shop glass': glass('#1d2427', 0.03),
+  'Window glass': glass('#394246'),
+  'Curtain glass': glass('#33494a'),
+  'Shop glass': glass('#3b4245', 0.03),
   'Shop window': glass('#56605d', 0.05),
   'Gallery glass': glass('#7f8a88', 0.06),
   'Stained orange': glass('#8a4a22', 0.05),

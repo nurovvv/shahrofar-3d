@@ -279,7 +279,31 @@ export function buildFloor(towerKey, floor, apts, walk = null) {
     const hall = walk.data.rooms.find((r) => r.tj === 'Даҳлез') ?? walk.data.rooms.find((r) => r.kind === 'hall') ?? rooms[rooms.length - 1];
     const [sx, sy] = interiorPoint(hall.poly);
     const [tx, ty] = interiorPoint(rooms[0].poly);
-    const s0 = frame.toScene(sx, sy), t0 = frame.toScene(tx, ty);
+    // look the way with the widest clear view (open over the whole field of view, not through a
+    // doorway's slot), leaning a little towards the largest room
+    const toRoom = Math.atan2(ty - sy, tx - sx);
+    const N = 72, dist = [];
+    for (let k = 0; k < N; k++) {
+      const a = (k / N) * Math.PI * 2, dx = Math.cos(a), dy = Math.sin(a);
+      let d = 10;
+      for (const [ax, ay, bx, by] of segments) {
+        // ray (sx, sy) + t (dx, dy) against segment a-b
+        const ex = bx - ax, ey = by - ay, den = dx * ey - dy * ex;
+        if (Math.abs(den) < 1e-9) continue;
+        const t = ((ax - sx) * ey - (ay - sy) * ex) / den, u = ((ax - sx) * dy - (ay - sy) * dx) / den;
+        if (t > 0 && u >= 0 && u <= 1) d = Math.min(d, t);
+      }
+      dist.push(d);
+    }
+    let best = toRoom, bestScore = -Infinity;
+    for (let k = 0; k < N; k++) {
+      let open = 0;
+      for (let j = -5; j <= 5; j++) open += Math.min(dist[(k + j + N) % N], 8); // +-25 degrees
+      const a = (k / N) * Math.PI * 2;
+      const score = open * (1 + 0.2 * Math.cos(a - toRoom));
+      if (score > bestScore) [bestScore, best] = [score, a];
+    }
+    const s0 = frame.toScene(sx, sy), t0 = frame.toScene(sx + Math.cos(best), sy + Math.sin(best));
     spawn = { x: s0.x, z: s0.z, yaw: Math.atan2(-(t0.x - s0.x), -(t0.z - s0.z)) };
   }
 

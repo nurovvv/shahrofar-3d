@@ -86,12 +86,58 @@ export async function loadComplex(apartments, renderer, onProgress) {
     units.set(apt.id, { overlay: mesh, edges, center: new THREE.Vector3(c.x, apt.baseY, c.z), top: box.max.y });
   }
 
+  // Floors that share a mesh (the typical floors: same plan, same height) are drawn as one instanced
+  // mesh per material instead of one mesh per floor and material: about a third of the draw calls,
+  // shadows included, with the geometry still stored once. A hidden floor is a zero-scaled instance.
+  const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
+  const shared = new Map(); // geometry+material -> [{ mesh, holder, part }]
+  for (const t of Object.values(towers)) {
+    for (const f of Object.values(t.floors)) {
+      for (const part of ['slab', 'walls']) {
+        f[part]?.traverse((m) => {
+          if (!m.isMesh) return;
+          const key = `${m.geometry.uuid}/${m.material.uuid}`;
+          if (!shared.has(key)) shared.set(key, []);
+          shared.get(key).push({ mesh: m, holder: f, part });
+        });
+      }
+    }
+  }
+  const rootInv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  for (const list of shared.values()) {
+    if (list.length < 2) continue;
+    const { mesh } = list[0];
+    const im = new THREE.InstancedMesh(mesh.geometry, mesh.material, list.length);
+    im.castShadow = mesh.castShadow;
+    im.receiveShadow = mesh.receiveShadow;
+    im.name = `floors ${mesh.name}`;
+    list.forEach(({ mesh: m, holder, part }, i) => {
+      const matrix = new THREE.Matrix4().multiplyMatrices(rootInv, m.matrixWorld);
+      im.setMatrixAt(i, matrix);
+      ((holder.instances ??= { slab: [], walls: [] })[part]).push({ im, i, matrix });
+      m.removeFromParent();
+    });
+    im.computeBoundingSphere();
+    root.add(im);
+  }
   const each = (fn) => {
     for (const [k, t] of Object.entries(towers)) {
       for (const [n, f] of Object.entries(t.floors)) fn(k, +n, f, t);
     }
   };
+  const touched = new Set();
   const setVisible = (o, v) => o && (o.visible = v);
+  const setPart = (f, part, v) => {
+    setVisible(f[part], v); // whatever of the floor stayed a plain mesh
+    for (const { im, i, matrix } of f.instances?.[part] ?? []) {
+      im.setMatrixAt(i, v ? matrix : ZERO);
+      touched.add(im);
+    }
+  };
+  const flush = () => {
+    for (const im of touched) im.instanceMatrix.needsUpdate = true;
+    touched.clear();
+  };
 
   return {
     texturesReady: Promise.all(textures),
@@ -104,18 +150,20 @@ export async function loadComplex(apartments, renderer, onProgress) {
     showUpTo(towerKey, floor) {
       each((k, n, f, t) => {
         const above = k === towerKey && n > floor;
-        setVisible(f.slab, !above);
-        setVisible(f.walls, !above && !(k === towerKey && n === floor));
+        setPart(f, 'slab', !above);
+        setPart(f, 'walls', !above && !(k === towerKey && n === floor));
         setVisible(t.roof, k !== towerKey);
       });
+      flush();
     },
     // Everything visible, except the walls of an apartment floor someone is walking around in.
     showAll(openTower = null, openFloor = null) {
       each((k, n, f, t) => {
-        setVisible(f.slab, true);
-        setVisible(f.walls, !(k === openTower && n === openFloor));
+        setPart(f, 'slab', true);
+        setPart(f, 'walls', !(k === openTower && n === openFloor));
         setVisible(t.roof, true);
       });
+      flush();
     },
   };
 }

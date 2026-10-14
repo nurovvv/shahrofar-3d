@@ -408,6 +408,8 @@ function enterWalk(a) {
     camera.fov = 72;
     camera.near = 0.05;
     pipeline.walk(true);
+    // indoors the sky reaches the rooms only through the windows: less of its even light
+    scene.environmentIntensity = 0.45;
     camera.updateProjectionMatrix();
     walk.start(walkInterior, scene);
     $('#ext-ui').hidden = true;
@@ -426,6 +428,7 @@ function exitWalk() {
     camera.fov = 38;
     camera.near = 1;
     pipeline.walk(false);
+    scene.environmentIntensity = 1;
     camera.updateProjectionMatrix();
     controls.enabled = true;
     $('#ext-ui').hidden = false;

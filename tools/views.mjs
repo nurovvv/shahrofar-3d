@@ -16,6 +16,14 @@ export const VIEWS = {
   deck: { pos: [81, 60, -60], target: [25, 14, 0] },
   // street, trees, cars and the neighbour blocks
   street: { pos: [62, 1.7, 112], target: [25, 12, 40] },
+  // close-ups: hotel curtain wall, block B windows and balconies, the landscape at eye height
+  glass_close: { pos: [52, 14, 66], target: [36, 24, 50] },
+  facade_b_close: { pos: [36, 34, 22], target: [22, 36, -6] },
+  landscape: { pos: [5, 3.5, 92], target: [-12, 1.5, 62] },
+  // walls between apartments, close: the same cut-away floor, camera low over the party walls
+  walls_v12: { floor: ['V', 12], from: HOME, pos: [-30, 60, 4], target: [-38, 43, -14] },
+  // walking inside a flat (camera from the walk controls at the entrance)
+  walk_v12: { walk: 'V12-7' },
   // cut-away floor views (camera from the app's own flight)
   floor_v12: { floor: ['V', 12], ui: true, from: HOME },
   floor_b8: { floor: ['B', 8], ui: true, from: HOME },
