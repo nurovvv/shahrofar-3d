@@ -6,6 +6,7 @@ import { buildWorld } from './world.js';
 import { loadComplex } from './building.js';
 import { buildFloor } from './floor.js';
 import { WalkControls } from './walk.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { drawPlan, planTransform } from './plan.js';
 import { Q, setQuality } from './quality.js';
 import { createRenderer, createPipeline } from './render.js';
@@ -422,8 +423,7 @@ function enterWalk(a) {
     camera.fov = 72;
     camera.near = 0.05;
     pipeline.walk(true);
-    // indoors the sky reaches the rooms only through the windows: less of its even light
-    scene.environmentIntensity = 0.45;
+    lightInterior(walkInterior);
     camera.updateProjectionMatrix();
     walk.start(walkInterior, scene);
     $('#ext-ui').hidden = true;
@@ -432,6 +432,42 @@ function enterWalk(a) {
     $('#walk-title').innerHTML = `<b>No. ${a.number}</b> · ${roomsText(a.rooms)} · ${a.area} m² · Floor ${a.floor} · ${money.format(a.price)}`;
     prepareMinimap(a);
   });
+}
+
+// Indoors, the sky's even light (blue above, green ground below) would reach every corner. A small
+// studio-like room lights the interior's ambient and reflections instead, the sun's shadow map is
+// pulled in round the flat (sharp window shadows on the floor), and the room lights cast shadows.
+let roomEnv = null, outdoor = null, bounce = null;
+function lightInterior(interior) {
+  const sun = world.sun, sc = sun.shadow.camera;
+  if (interior) {
+    roomEnv ??= new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+    outdoor = {
+      env: scene.environment, envI: scene.environmentIntensity,
+      cam: [sc.left, sc.right, sc.top, sc.bottom, sc.near, sc.far], pos: sun.position.clone(), target: sun.target.position.clone(),
+    };
+    scene.environment = roomEnv;
+    scene.environmentIntensity = 0.32;
+    // light bounced off the floor and walls: warm from below (it is what lights a ceiling)
+    bounce ??= new THREE.HemisphereLight(0xfff3e4, 0xd9c3a5, 0.9);
+    scene.add(bounce);
+    const c = new THREE.Box3().setFromObject(interior.group).getCenter(new THREE.Vector3());
+    const dir = sun.position.clone().sub(sun.target.position).normalize();
+    sun.target.position.copy(c);
+    sun.position.copy(c).addScaledVector(dir, 120);
+    [sc.left, sc.right, sc.top, sc.bottom, sc.near, sc.far] = [-24, 24, 24, -24, 60, 200];
+  } else if (outdoor) {
+    bounce?.removeFromParent();
+    scene.environment = outdoor.env;
+    scene.environmentIntensity = outdoor.envI;
+    [sc.left, sc.right, sc.top, sc.bottom, sc.near, sc.far] = outdoor.cam;
+    sun.position.copy(outdoor.pos);
+    sun.target.position.copy(outdoor.target);
+    outdoor = null;
+  }
+  sun.target.updateMatrixWorld();
+  sc.updateProjectionMatrix();
+  shadowsDirty();
 }
 
 function exitWalk() {
@@ -444,7 +480,7 @@ function exitWalk() {
     camera.fov = 38;
     camera.near = 1;
     pipeline.walk(false);
-    scene.environmentIntensity = 1;
+    lightInterior(null);
     camera.updateProjectionMatrix();
     controls.enabled = true;
     $('#ext-ui').hidden = false;

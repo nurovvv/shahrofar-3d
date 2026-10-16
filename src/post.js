@@ -33,9 +33,9 @@ export function postPipeline(renderer, scene, camera, tone) {
     },
     // inside a flat: smaller radius, rooms are a few metres across
     walk: (on) => {
-      ao.configuration.aoRadius = on ? 0.7 : 2.2;
-      ao.configuration.distanceFalloff = on ? 0.4 : 0.6;
-      ao.configuration.intensity = on ? 1.6 : 2.2;
+      ao.configuration.aoRadius = on ? 0.6 : 2.2;
+      ao.configuration.distanceFalloff = on ? 0.35 : 0.6;
+      ao.configuration.intensity = on ? 2.4 : 2.2;
     },
     ao,
   };

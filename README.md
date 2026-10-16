@@ -24,6 +24,18 @@ Built with [Three.js](https://threejs.org) and [Vite](https://vitejs.dev).
 | Block Б | 20 | floors 5–20, 8 per floor (1–3 rooms, 52–154 m²) |
 | Block А | 16 | hotel, not for sale |
 
+## Interiors
+
+The walk-through is fitted out in the browser from the floor plans (`src/floor.js`, models and materials in `src/interior/`):
+
+- each room's outline is probed from inside to find what is behind it (wall, window, glazing or an opening); door-wide gaps between rooms get a door frame, the wall over the door and an open leaf (only where it leaves room to walk round it and does not swing into the way to another doorway)
+- skirting along the walls, tiled walls and floors in bathrooms and WCs, window frames, sills, radiators, sheer curtains in living rooms and bedrooms
+- bathroom fittings where the drawing has them (WC, basin, bath, laundry counter); furniture against solid walls, away from doors and windows, with space kept to walk in front of beds, wardrobes and the kitchen; collisions with furniture
+- light: a small studio environment indoors instead of the sky, warm bounce light, the sun's shadows pulled in round the flat, ceiling pendants and downlights with shadows (high level)
+- textures (oak floor, porcelain, plaster, fabrics, veneers, rugs, paintings) are drawn on canvases at load, no image files
+
+`node tools/interior_shots.mjs build/interior --apt V12-7,B8-1` takes a picture from a corner of each room of the given flats.
+
 ## Rebuilding the model
 
 ```bash
