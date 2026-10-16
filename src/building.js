@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { MODEL_URL, toScene, towerByKey } from './config.js';
-import { materialFor, setupMaterial } from './materials.js';
+import { flagstone, materialFor, setupMaterial } from './materials.js';
 
 // The published artifact page can't serve .glb files, so it gets the same bytes base64-encoded
 // in a JSON file ({ "glb": "..." }); everywhere else the .glb is loaded directly.
@@ -38,7 +38,7 @@ export async function loadComplex(apartments, renderer, onProgress) {
     if (obj.isMesh) {
       obj.castShadow = true;
       obj.receiveShadow = true;
-      obj.material = Array.isArray(obj.material) ? obj.material.map(materialFor) : materialFor(obj.material);
+      obj.material = Array.isArray(obj.material) ? obj.material.map(materialFor) : flagstone(obj, obj.material) ?? materialFor(obj.material);
       for (const m of [obj.material].flat()) {
         if (!tuned.has(m)) {
           textures.push(setupMaterial(m, renderer));

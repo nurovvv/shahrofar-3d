@@ -36,6 +36,12 @@ The walk-through is fitted out in the browser from the floor plans (`src/floor.j
 
 `node tools/interior_shots.mjs build/interior --apt V12-7,B8-1` takes a picture from a corner of each room of the given flats.
 
+## Playground and surroundings
+
+- The ground-level playground by the car park is fitted out in the viewer (`src/playground.js`) on the model's rubber surfaces: two play towers with a rope bridge, slides, a climbing wall and a fireman's pole, swings with a nest swing, a roundabout and painted games for older children; a sandpit under a shade sail, a play house, spring riders and a see-saw for small ones; a fence with gates, benches, bins and a sign.
+- The crazy paving of the decks, the hotel terrace and the promenade uses four close tones of one stone; the neighbours' plain massing gets storeys and windows drawn on in the shader.
+- `node tools/shots.mjs build/shots --only playground,playground_eye,cars` for close views.
+
 ## Rebuilding the model
 
 ```bash

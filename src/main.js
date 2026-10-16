@@ -4,6 +4,7 @@ import { RESIDENTIAL, STATUS, toScene, towerByKey } from './config.js';
 import { apartments, aptsOnFloor } from './data.js';
 import { buildWorld } from './world.js';
 import { loadComplex } from './building.js';
+import { addPlayground } from './playground.js';
 import { buildFloor } from './floor.js';
 import { WalkControls } from './walk.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
@@ -74,6 +75,7 @@ modelLoad
   .then((b) => {
     building = b;
     scene.add(b.group);
+    addPlayground(scene, b.group);
     shadowsDirty();
     loadingEl.hidden = true;
     refresh();

@@ -20,6 +20,11 @@ export const VIEWS = {
   glass_close: { pos: [52, 14, 66], target: [36, 24, 50] },
   facade_b_close: { pos: [36, 34, 22], target: [22, 36, -6] },
   landscape: { pos: [5, 3.5, 92], target: [-12, 1.5, 62] },
+  // the ground-level playground by the car park: from above the street, and at a parent's eye height
+  playground: { pos: [30, 16, 68], target: [-6, 0, 30] },
+  playground_eye: { pos: [0.5, 1.6, 50], target: [-1, 0.9, 30] },
+  // parked cars, close
+  cars: { pos: [-26, 2.5, 46], target: [-24, 0.6, 30] },
   // walls between apartments, close: the same cut-away floor, camera low over the party walls
   walls_v12: { floor: ['V', 12], from: HOME, pos: [-30, 60, 4], target: [-38, 43, -14] },
   // walking inside a flat: the entrance hall of flat V12-7, looking west into the flat

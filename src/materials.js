@@ -56,21 +56,54 @@ const NOISE = /* glsl */ `
   }
 `;
 
-function patch(mat, { vary = 0, detile = false, leafy = false, tint = null } = {}) {
-  if (!vary && !detile && !leafy) return;
+// facade: storeys and window bays drawn on plain massing boxes (the neighbours), in world space:
+//         glass (some windows lit or curtained), frames, floor bands; roofs a darker membrane
+const FACADE = /* glsl */ `
+  float facadeGlass = 0.0;
+  {
+    vec3 fn = normalize(vWorldNormal);
+    if (abs(fn.y) < 0.5) {
+      vec2 ft = normalize(vec2(-fn.z, fn.x));
+      float fu = dot(vWorldPos.xz, ft), fv = vWorldPos.y;
+      float storey = floor(fv / uFacade.x), bay = floor(fu / uFacade.y);
+      vec2 f = vec2(fract(fu / uFacade.y), fract(fv / uFacade.x));
+      float upper = step(1.0, storey) * step(fv, uFacade.z - 0.9);
+      // ground floor: wide shop windows; upper floors: punched windows
+      vec2 lo = mix(vec2(0.08, 0.12), vec2(0.2, 0.3), upper), hi = mix(vec2(0.92, 0.85), vec2(0.8, 0.86), upper);
+      float win = step(lo.x, f.x) * step(f.x, hi.x) * step(lo.y, f.y) * step(f.y, hi.y) * step(fv, uFacade.z - 0.9);
+      float inner = step(lo.x + 0.03, f.x) * step(f.x, hi.x - 0.03) * step(lo.y + 0.03, f.y) * step(f.y, hi.y - 0.03);
+      float h = hash12(vec2(bay, storey) + floor(vWorldPos.xz / 60.0) * 17.0);
+      vec3 room = mix(vec3(0.05, 0.065, 0.08), vec3(0.2, 0.21, 0.22), h);
+      room = mix(room, vec3(0.62, 0.56, 0.46), step(0.88, h) * 0.7);   // curtains, a lit room
+      room = mix(room, vec3(0.78, 0.78, 0.76), step(0.8, h) * step(h, 0.88) * step(0.6, f.y) * 0.6); // blinds half down
+      diffuseColor.rgb = mix(diffuseColor.rgb, room, win * inner);
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.85, 0.82), win * (1.0 - inner));
+      facadeGlass = win * inner;
+      // a band at each floor slab, a darker plinth
+      diffuseColor.rgb *= 1.0 - 0.1 * step(f.y, 0.05) * upper;
+      diffuseColor.rgb *= 1.0 - 0.25 * step(fv, 0.5);
+    } else if (fn.y > 0.5) {
+      diffuseColor.rgb *= vec3(0.55, 0.54, 0.52);
+    }
+  }`;
+
+function patch(mat, { vary = 0, detile = false, leafy = false, tint = null, facade = null } = {}) {
+  if (!vary && !detile && !leafy && !facade) return;
   const tintColor = new THREE.Color(tint ?? '#ffffff');
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uVary = { value: vary };
     sh.uniforms.uTint = { value: tintColor };
+    sh.uniforms.uFacade = { value: new THREE.Vector3(...(facade ?? [3, 3, 0])) };
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;\nvarying vec3 vWorldNormal;')
       .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
         vec4 wp = vec4(transformed, 1.0);
         #ifdef USE_INSTANCING
           wp = instanceMatrix * wp;
         #endif
-        vWorldPos = (modelMatrix * wp).xyz;`);
-    let frag = sh.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vWorldPos;\nuniform float uVary;\nuniform vec3 uTint;\n${NOISE}`);
+        vWorldPos = (modelMatrix * wp).xyz;
+        vWorldNormal = normalize(mat3(modelMatrix) * objectNormal);`);
+    let frag = sh.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vWorldPos;\nvarying vec3 vWorldNormal;\nuniform float uVary;\nuniform vec3 uTint;\nuniform vec3 uFacade;\n${NOISE}`);
     if (detile) {
       frag = frag.replace('#include <map_fragment>', `
         #ifdef USE_MAP
@@ -88,6 +121,12 @@ function patch(mat, { vary = 0, detile = false, leafy = false, tint = null } = {
         diffuseColor.rgb *= 1.0 + uVary * ((m - 0.5) * 1.6 + (s - 0.5) * 0.6);
         diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * uTint, smoothstep(0.45, 0.8, m));
       }`);
+    if (facade) {
+      frag = frag
+        .replace('#include <color_fragment>', `#include <color_fragment>\n${FACADE}`)
+        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+          roughnessFactor = mix(roughnessFactor, 0.06, facadeGlass);`);
+    }
     if (leafy) {
       frag = frag
         .replace('#include <color_fragment>', `#include <color_fragment>
@@ -104,7 +143,7 @@ function patch(mat, { vary = 0, detile = false, leafy = false, tint = null } = {
     }
     sh.fragmentShader = frag;
   };
-  mat.customProgramCacheKey = () => `v${vary}d${+detile}l${+leafy}${tintColor.getHexString()}`;
+  mat.customProgramCacheKey = () => `v${vary}d${+detile}l${+leafy}f${facade ?? ''}${tintColor.getHexString()}`;
 }
 
 // ---------- the table ----------
@@ -159,13 +198,22 @@ const LIB = {
   'Deck stone': { set: 'patio', tile: 2.15, color: '#e8c9a4', roughness: 1, normal: 0.6, vary: 0.05 },
   Promenade: { set: 'paving', tile: 2, color: '#f2e2d8', roughness: 1, normal: 0.7, vary: 0.05, detile: true },
   Cobble: { set: 'setts', tile: 1.1, color: '#ece8e2', roughness: 1, normal: 0.6, vary: 0.05, detile: true },
+  // the crazy paving of the decks, the hotel terrace and the promenade: one natural stone in four
+  // close tones (the model gives each stone one of four shared materials; see flagstone() below)
+  'Flag light': { set: 'concrete', tile: 1.4, color: '#dcd8d0', roughness: 0.95, normal: 0.7, vary: 0.06 },
+  'Flag mid': { set: 'concrete', tile: 1.4, color: '#c4bfb6', roughness: 0.95, normal: 0.7, vary: 0.06 },
+  'Flag warm': { set: 'concrete', tile: 1.4, color: '#d2c8b9', roughness: 0.95, normal: 0.7, vary: 0.06 },
+  'Flag dark': { set: 'concrete', tile: 1.4, color: '#aeaaa3', roughness: 0.95, normal: 0.7, vary: 0.06 },
+  'Cobble joint': { color: '#8a857e', roughness: 1 },
   Wood: { set: 'deck', tile: 1.8, color: '#d9b08c', roughness: 0.9, normal: 0.6 },
   'Lattice wood': { set: 'deck', tile: 1.8, color: '#f0d2ad', roughness: 0.85, normal: 0.4 },
   'Rubber blue': { set: 'rubber', tile: 2, color: '#3f6ea8', roughness: 1, normal: 0.7 },
   'Play orange': { set: 'rubber', tile: 2, color: '#c0603e', roughness: 1, normal: 0.7 },
   'Play blue': { set: 'rubber', tile: 2, color: '#2f6da8', roughness: 0.8, normal: 0.5 },
-  Neighbour: { set: 'concrete', tile: 6, color: '#c2c5c6', roughness: 0.92, normal: 0.25, vary: 0.03, env: 0.6 },
-  'Neighbour solid': { set: 'concrete', tile: 4, color: '#e0ddd6', roughness: 0.92, normal: 0.3, vary: 0.03, env: 0.6 },
+  // neighbours: plain massing in the model; storeys and windows are drawn on (facade: storey
+  // height, bay width, roof level, metres)
+  Neighbour: { set: 'plaster', tile: 3, color: '#d9cfc0', roughness: 0.92, normal: 0.25, vary: 0.04, env: 0.6, facade: [3.0, 3.3, 48] },
+  'Neighbour solid': { set: 'plaster', tile: 3, color: '#e3d9c9', roughness: 0.92, normal: 0.3, vary: 0.04, env: 0.6, facade: [3.3, 3.0, 8.5] },
   // plants in the model (balcony planters, hedges, deck planting)
   Shrub: { color: '#3c5a26', roughness: 0.95, leafy: true, env: 0.35 },
   Leaves: { color: '#36531f', roughness: 0.95, leafy: true, env: 0.35 },
@@ -212,6 +260,23 @@ function waterNormalMap() {
   waterNormal.wrapS = waterNormal.wrapT = THREE.RepeatWrapping;
   waterNormal.colorSpace = THREE.NoColorSpace;
   return waterNormal;
+}
+
+// stones of the crazy paving: the same four materials also make bridges, kerbs and sidewalks
+// elsewhere, so only the paving's meshes get the flagstone twins
+const FLAG = { Cobble: 'Flag light', Bridge: 'Flag mid', Kerb: 'Flag warm', Sidewalk: 'Flag dark' };
+const PAVED = /^(Podium_decks|Hotel_terrace_wing|Promenade)$/;
+const flags = new Map();
+/** The material for a stone of the crazy paving (mesh in one of the paved groups), else null. */
+export function flagstone(mesh, m) {
+  const name = FLAG[m.name];
+  if (!name || !PAVED.test(mesh.parent?.name ?? '')) return null;
+  if (!flags.has(name)) {
+    const f = m.clone();
+    f.name = name;
+    flags.set(name, f);
+  }
+  return flags.get(name);
 }
 
 /**
