@@ -162,6 +162,18 @@ export class Kit {
     return this;
   }
 
+  /** remember what has been added so far, to take the pieces after it back out with rollback() */
+  mark() {
+    return new Map([...this.parts].map(([mat, list]) => [mat, list.length]));
+  }
+
+  rollback(mark) {
+    for (const [mat, list] of this.parts) {
+      const n = mark.get(mat) ?? 0;
+      list.splice(n).forEach((g) => g.dispose());
+    }
+  }
+
   build(group, own, { cast = true } = {}) {
     for (const [mat, geos] of this.parts) {
       // every piece needs the same attributes to merge: normals and (placeholder) UVs

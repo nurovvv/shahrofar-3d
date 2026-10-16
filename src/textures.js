@@ -217,4 +217,46 @@ const SURFACES = {
     const { c } = blocks(256, '#ddd5ca', '#b9afa3', 8, 4, 0.5, ['#d8cfc4', '#d2c8bc', '#ddd4c9', '#cec4b8'], 31);
     return { canvas: c, metres: 1.6 };
   },
+  // sidewalks: 40 cm grey concrete slabs, laid square, with a little weathering
+  slabs() {
+    const size = 512, c = document.createElement('canvas');
+    c.width = c.height = size;
+    const g = c.getContext('2d'), rnd = seeded(41);
+    g.fillStyle = '#8f8f8c';
+    g.fillRect(0, 0, size, size);
+    const n = 6, s = size / n;
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        const l = 74 + rnd() * 7;
+        g.fillStyle = `hsl(${40 + rnd() * 20}, ${3 + rnd() * 4}%, ${l}%)`;
+        g.fillRect(i * s + 2, j * s + 2, s - 4, s - 4);
+        // aggregate speckle and a stain now and then
+        for (let k = 0; k < 220; k++) {
+          g.globalAlpha = 0.25;
+          g.fillStyle = rnd() < 0.5 ? '#9a9893' : '#d9d8d3';
+          g.fillRect(i * s + 2 + rnd() * (s - 6), j * s + 2 + rnd() * (s - 6), 1.5, 1.5);
+        }
+        if (rnd() < 0.18) {
+          g.globalAlpha = 0.12;
+          g.fillStyle = '#6f6a62';
+          g.beginPath();
+          g.ellipse(i * s + s * rnd(), j * s + s * rnd(), s * 0.3, s * 0.2, rnd() * 3, 0, Math.PI * 2);
+          g.fill();
+        }
+        g.globalAlpha = 1;
+      }
+    }
+    return { canvas: c, metres: 2.4 };
+  },
+  // the plaza round the complex: pale stone pavers 30 x 60 cm in running bond, mixed tones
+  plaza() {
+    const { c, g, rnd } = blocks(512, '#d6d1c8', '#a9a39a', 8, 4, 0.5, ['#d9d4cb', '#cfc9bf', '#e0dbd2', '#c8c2b8', '#d4cdc1'], 53);
+    for (let k = 0; k < 9000; k++) {
+      g.globalAlpha = 0.18;
+      g.fillStyle = rnd() < 0.5 ? '#a8a299' : '#ebe7df';
+      g.fillRect(rnd() * 512, rnd() * 512, 1.5, 1.5);
+    }
+    g.globalAlpha = 1;
+    return { canvas: c, metres: 2.4 };
+  },
 };

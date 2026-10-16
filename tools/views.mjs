@@ -24,6 +24,10 @@ export const VIEWS = {
   playground: { pos: [30, 16, 68], target: [-6, 0, 30] },
   playground_top: { pos: [-4, 46, 48], target: [-4, 0, 30.5] },
   playground_eye: { pos: [0.5, 1.6, 50], target: [-1, 0.9, 30] },
+  // street level: the road in front of the hotel, the promenade by the shops, the avenue
+  street_hotel: { pos: [60, 1.65, 95], target: [20, 1.5, 70] },
+  street_front: { pos: [-40, 1.65, 40], target: [10, 2, 35] },
+  street_avenue: { pos: [127, 1.7, 20], target: [137, 3, -40] },
   // parked cars, close
   cars: { pos: [-26, 2.5, 46], target: [-24, 0.6, 30] },
   // walls between apartments, close: the same cut-away floor, camera low over the party walls

@@ -30,7 +30,9 @@ The walk-through is fitted out in the browser from the floor plans (`src/floor.j
 
 - each room's outline is probed from inside to find what is behind it (wall, window, glazing or an opening); door-wide gaps between rooms get a door frame, the wall over the door and an open leaf (only where it leaves room to walk round it and does not swing into the way to another doorway)
 - skirting along the walls, tiled walls and floors in bathrooms and WCs, window frames, sills, radiators, sheer curtains in living rooms and bedrooms
-- bathroom fittings where the drawing has them (WC, basin, bath, laundry counter); furniture against solid walls, away from doors and windows, with space kept to walk in front of beds, wardrobes and the kitchen; collisions with furniture
+- bathroom fittings where the drawing has them (WC, basin or double vanity, bath); the drawing outlines many fittings twice (a bath's rim and its tub, a counter and its bowl), so overlapping outlines are merged into one fitting first
+- furniture against solid walls, away from doors and windows (a kitchen run may stand under a window: the sink goes there, the wall cabinets stop at the window), each piece tried along every free stretch of wall; collisions with furniture
+- in the flat being walked through, every room must stay reachable from the entrance: a room whose furniture would block the way is refitted with the essentials only
 - light: a small studio environment indoors instead of the sky, warm bounce light, the sun's shadows pulled in round the flat, ceiling pendants and downlights with shadows (high level)
 - textures (oak floor, porcelain, plaster, fabrics, veneers, rugs, paintings) are drawn on canvases at load, no image files
 
@@ -40,7 +42,8 @@ The walk-through is fitted out in the browser from the floor plans (`src/floor.j
 
 - The ground-level playground by the car park is fitted out in the viewer (`src/playground.js`) on the model's rubber surfaces: for older children a play structure (two towers, a rope bridge, stairs, a climbing wall, a slide, a tube slide, a climbing net, a fireman's pole), swings with a nest swing, a rope pyramid, a roundabout, an in-ground trampoline, stepping posts and painted games; for small ones a sandpit under a shade sail, a toddler tower, a play house, spring riders, a see-saw and a spinning bowl; poured rubber with impact zones, shade trees, a fence with gates, benches, bins and a sign. In dev builds a layout check reports pieces that overlap or stand too near the fence.
 - The crazy paving of the decks, the hotel terrace and the promenade uses four close tones of one stone; the neighbours' plain massing gets storeys and windows drawn on in the shader.
-- `node tools/shots.mjs build/shots --only playground,playground_top,playground_eye,cars` for close views.
+- The local streets (`src/streets.js`, the road centre lines of `blender/complex/site.py`): dashed centre lines, zebra crossings with stop lines and signs, give-way and speed-limit signs at the junctions, street lights, a bus stop, benches and bins, drain grates and manhole covers; concrete-slab sidewalks and pale stone paving on the plaza; people standing on a road are moved onto the sidewalk.
+- `node tools/shots.mjs build/shots --only playground,playground_top,playground_eye,cars,street_hotel,street_front` for close views.
 
 ## Rebuilding the model
 

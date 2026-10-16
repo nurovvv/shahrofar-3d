@@ -218,8 +218,11 @@ export function wardrobe(k, M, w, h) {
  * Kitchen along a wall, `len` long, wall cabinets up to `h`. Options: fridge at the right end,
  * sink and hob positions are picked from the length. Returns light positions (under-cabinet strip).
  */
-export function kitchen(k, M, len, h) {
-  const d = 0.62, top = 0.9, fridge = len >= 2.8;
+export function kitchen(k, M, len, h, windows = []) {
+  // windows: [x0, x1] spans of the run (frame x) in front of a window: base units only there
+  const over = (a, b) => windows.some(([w0, w1]) => Math.min(b, w1) - Math.max(a, w0) > 0.02);
+  const fridge = len >= 2.8 && !over(len / 2 - 0.62, len / 2);
+  const d = 0.62, top = 0.9;
   const runL = fridge ? len - 0.62 : len, x0 = -len / 2, x1 = x0 + runL;
   // plinth and base carcass (the fronts' finish; dark only in the gaps between fronts)
   k.box(M.oak, x0, 0.1, 0, x1, top - 0.03, d - 0.07);
@@ -227,7 +230,12 @@ export function kitchen(k, M, len, h) {
   k.box(M.color(0x2b2724, 0.9), x0, 0, d - 0.1, x1, 0.1, d - 0.08);
   // modules of 60 cm: sink, dishwasher, hob over oven, drawers
   const n = Math.max(2, Math.floor(runL / 0.6)), mw = runL / n;
-  const sinkAt = Math.min(n - 1, 1), hobAt = n >= 4 ? n - 2 : n - 1;
+  // the sink under a window when there is one, the hob away from it (and never under a window)
+  const mod = (i) => [x0 + i * mw, x0 + (i + 1) * mw];
+  const underWin = [...Array(n).keys()].filter((i) => over(...mod(i)));
+  const sinkAt = underWin.length ? underWin[Math.floor(underWin.length / 2)] : Math.min(n - 1, 1);
+  const free = [...Array(n).keys()].filter((i) => i !== sinkAt && !over(...mod(i)));
+  const hobAt = free.length ? free.reduce((p, q) => (Math.abs(q - sinkAt) > Math.abs(p - sinkAt) ? q : p)) : (sinkAt + 1) % n;
   for (let i = 0; i < n; i++) {
     const a = x0 + i * mw + 0.002, b = a + mw - 0.004;
     if (i === hobAt) {
@@ -269,19 +277,30 @@ export function kitchen(k, M, len, h) {
   for (const [fx, fz, r] of [[0.28, 0.18, 0.09], [0.72, 0.18, 0.07], [0.28, 0.42, 0.07], [0.72, 0.42, 0.09]]) {
     k.lathe(M.color(0x3a3b3d, 0.3), [[r, 0], [r - 0.005, 0.0008], [0, 0.0008]], ha + (hb - ha) * fx, top + 0.006, fz, 32);
   }
-  // splashback and wall cabinets with a light strip under them
+  // splashback and wall cabinets with a light strip under them, in the stretches between windows
   const ub = 1.48, ut = Math.min(h - 0.01, 2.36), ud = 0.35;
-  k.box(M.splash, x0, top, 0, x1, ub, 0.012);
-  k.box(M.lacquer, x0, ub, 0, x1, ut, ud - 0.03);
-  k.box(M.color(GAP, 0.9), x0 + 0.01, ub + 0.01, ud - 0.03, x1 - 0.01, ut - 0.01, ud - 0.021);
-  const un = Math.max(1, Math.round(runL / 0.5)), uw = runL / un;
-  for (let i = 0; i < un; i++) {
-    const a = x0 + i * uw + 0.002, b = a + uw - 0.004;
-    k.box(M.lacquer, a, ub + 0.002, ud - 0.02, b, ut, ud);
+  const spans = [];
+  let a0 = x0;
+  for (const [w0, w1] of [...windows].sort((p, q) => p[0] - q[0])) {
+    if (w1 <= x0 || w0 >= x1) continue;
+    if (w0 - a0 > 0.05) spans.push([a0, Math.min(w0, x1)]);
+    a0 = Math.max(a0, w1);
   }
-  k.box(M.strip, x0 + 0.05, ub - 0.012, ud - 0.06, x1 - 0.05, ub - 0.004, ud - 0.04);
-  // above the cabinets up to the ceiling: a plain bulkhead
-  if (h - ut > 0.02) k.box(M.lacquer, x0, ut, 0, x1, h, ud);
+  if (x1 - a0 > 0.05) spans.push([a0, x1]);
+  for (const [sx0, sx1] of spans) {
+    k.box(M.splash, sx0, top, 0, sx1, ub, 0.012);
+    if (sx1 - sx0 < 0.3) continue; // too narrow for a cabinet: tiles only
+    k.box(M.lacquer, sx0, ub, 0, sx1, ut, ud - 0.03);
+    k.box(M.color(GAP, 0.9), sx0 + 0.01, ub + 0.01, ud - 0.03, sx1 - 0.01, ut - 0.01, ud - 0.021);
+    const un = Math.max(1, Math.round((sx1 - sx0) / 0.5)), uw = (sx1 - sx0) / un;
+    for (let i = 0; i < un; i++) {
+      const a = sx0 + i * uw + 0.002, b = a + uw - 0.004;
+      k.box(M.lacquer, a, ub + 0.002, ud - 0.02, b, ut, ud);
+    }
+    k.box(M.strip, sx0 + 0.05, ub - 0.012, ud - 0.06, sx1 - 0.05, ub - 0.004, ud - 0.04);
+    // above the cabinets up to the ceiling: a plain bulkhead
+    if (h - ut > 0.02) k.box(M.lacquer, sx0, ut, 0, sx1, h, ud);
+  }
   // tall fridge housing
   if (fridge) {
     const a = x1 + 0.002, b = x0 + len;
@@ -445,16 +464,21 @@ export function toilet(k, M, w, d, h) {
 }
 
 /** floating vanity with a vessel basin, mirror cabinet and a light above */
-export function vanity(k, M, w, h) {
+/** floating vanity w wide with one or two vessel basins, a mirror and a light bar */
+export function vanity(k, M, w, h, bowls = 1) {
   const d = 0.48, y0 = 0.42, y1 = 0.82;
   k.box(M.walnut, -w / 2, y0, 0, w / 2, y1 - 0.03, d - 0.02);
   k.box(M.color(GAP, 0.9), -w / 2 + 0.01, (y0 + y1) / 2 - 0.004, d - 0.02, w / 2 - 0.01, (y0 + y1) / 2 + 0.004, d - 0.018);
+  if (bowls > 1) k.box(M.color(GAP, 0.9), -0.004, y0 + 0.01, d - 0.02, 0.004, y1 - 0.04, d - 0.018);
   k.box(M.quartz, -w / 2, y1 - 0.03, 0, w / 2, y1, d);
-  k.lathe(M.ceramic, [[0, 0], [0.12, 0], [0.19, 0.04], [0.2, 0.13], [0.19, 0.13], [0.18, 0.05], [0.11, 0.015], [0, 0.015]], 0, y1, d / 2 + 0.02, 32);
-  k.cyl(M.chrome, 0, y1, 0.08, 0.02, y1 + 0.28, 16);
-  k.box(M.chrome, -0.012, y1 + 0.25, 0.08, 0.012, y1 + 0.27, 0.24);
-  // mirror and a light bar
-  const mw = Math.min(w, 1.0);
+  for (let i = 0; i < bowls; i++) {
+    const x = bowls > 1 ? (i - 0.5) * (w / 2) : 0;
+    k.lathe(M.ceramic, [[0, 0], [0.12, 0], [0.19, 0.04], [0.2, 0.13], [0.19, 0.13], [0.18, 0.05], [0.11, 0.015], [0, 0.015]], x, y1, d / 2 + 0.02, 32);
+    k.cyl(M.chrome, x, y1, 0.08, 0.02, y1 + 0.28, 16);
+    k.box(M.chrome, x - 0.012, y1 + 0.25, 0.08, x + 0.012, y1 + 0.27, 0.24);
+  }
+  // one mirror and light bar over the whole vanity
+  const mw = Math.min(w, bowls > 1 ? 1.6 : 1.0);
   k.box(M.color(GAP, 0.9), -mw / 2, 1.1, 0, mw / 2, 1.9, 0.02);
   k.box(M.mirror, -mw / 2 + 0.005, 1.105, 0.02, mw / 2 - 0.005, 1.895, 0.025);
   k.rbox(M.strip, 0, 1.97, 0.06, mw * 0.8, 0.03, 0.06, 0.012, 1);

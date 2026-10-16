@@ -191,6 +191,7 @@ export function buildFloor(towerKey, floor, apts, walk = null) {
   // collision outlines (plan segments): walls, windows and glazing, then doors and furniture
   const segments = [];
   const obstacles = []; // furniture and door leaves (for the checks in tools/)
+  const notes = [];
   const addOutline = (p, what) => {
     if (what) obstacles.push({ what, poly: p });
     for (let i = 0, j = p.length - 1; i < p.length; j = i++) segments.push([p[j][0], p[j][1], p[i][0], p[i][1]]);
@@ -201,7 +202,7 @@ export function buildFloor(towerKey, floor, apts, walk = null) {
   const fitted = walk ? apts.filter((a) => a === walk) : apts;
 
   // ---- room floors and the shell ----
-  const wet = (room, apt) => ['bath', 'loggia'].includes(room.kind) || apt.data.fixtures.some((fx) => fixtureKind(fx) === 'toilet' && inside(room.poly, ...centre(fx)));
+  const wet = (room, apt) => ['bath', 'loggia'].includes(room.kind) || fittings(apt).some((fx) => fixtureKind(fx) === 'toilet' && inside(room.poly, ...centre(fx.poly)));
   for (const apt of apts) {
     for (const room of apt.data.rooms) {
       room._wet = wet(room, apt);
@@ -274,8 +275,15 @@ export function buildFloor(towerKey, floor, apts, walk = null) {
       roomInfo.set(room, runs);
       for (const r of runs) {
         if (r.kind !== 'open' || r.len < 0.45) continue;
+        // a doorway keeps its whole width clear; a wide open-plan opening only a 1.1 m way through
+        // its middle (furniture may stand along the rest of it, as in any open-plan room)
         const e = 0.15, d = 0.95;
-        const a = [r.a[0] - r.u[0] * e, r.a[1] - r.u[1] * e], b = [r.b[0] + r.u[0] * e, r.b[1] + r.u[1] * e];
+        let a = [r.a[0] - r.u[0] * e, r.a[1] - r.u[1] * e], b = [r.b[0] + r.u[0] * e, r.b[1] + r.u[1] * e];
+        if (r.len > 1.3) {
+          const m = [(r.a[0] + r.b[0]) / 2, (r.a[1] + r.b[1]) / 2];
+          a = [m[0] - r.u[0] * 0.55, m[1] - r.u[1] * 0.55];
+          b = [m[0] + r.u[0] * 0.55, m[1] + r.u[1] * 0.55];
+        }
         const poly = [a, b, [b[0] + r.n[0] * d, b[1] + r.n[1] * d], [a[0] + r.n[0] * d, a[1] + r.n[1] * d]];
         keepout.push(poly);
         zones.push({ poly, mid: [(r.a[0] + r.b[0]) / 2, (r.a[1] + r.b[1]) / 2] });
@@ -366,19 +374,42 @@ export function buildFloor(towerKey, floor, apts, walk = null) {
 
   // ---- fittings from the drawing, furniture ----
   for (const apt of fitted) {
-    for (const fx of apt.data.fixtures) {
-      const room = apt.data.rooms.find((r) => inside(r.poly, ...centre(fx)));
-      const box = placeFixture(k, M, fx, room, H);
-      if (box) {
-        addOutline(box, 'fixture');
-        keepout.push(box);
+    for (const fx of fittings(apt)) {
+      const room = apt.data.rooms.find((r) => inside(r.poly, ...centre(fx.poly)));
+      const placedFx = placeFixture(k, M, fx, room, H);
+      if (placedFx) {
+        if (placedFx.solid) addOutline(placedFx.box, 'fixture');
+        keepout.push(placedFx.box);
       }
     }
+    // in the flat being walked through, no room may be shut off by furniture: after each room
+    // the way from the entrance is checked, and a room that blocks it is furnished again with
+    // the essentials only (or left empty)
+    const check = walk === apt;
+    const start = check ? interiorPoint(entranceHall(apt).poly) : null;
+    const before = check ? reachableRooms(apt, segments, start) : null;
+    // take back everything added after a mark (the kit's pieces, collisions, keep-out zones, lights)
+    const mark = () => ({ kit: k.mark(), seg: segments.length, keep: keepout.length, obs: obstacles.length, lights: lights.length });
+    const rollback = (m) => {
+      k.rollback(m.kit);
+      segments.length = m.seg;
+      keepout.length = m.keep;
+      obstacles.length = m.obs;
+      lights.length = m.lights;
+    };
     for (const room of apt.data.rooms) {
-      // ceiling fittings only under a ceiling (not in the cut-away view)
-      const ctx = { k, M, H, room, apt, keepout, addOutline: (p) => addOutline(p, room.kind), lights, solid, runs: roomInfo.get(room), ceiling: !!walk };
-      furnish(ctx);
-      if (ctx.ceiling) downlights(ctx);
+      const snap = mark();
+      for (const sparse of [false, true]) {
+        // ceiling fittings only under a ceiling (not in the cut-away view)
+        const ctx = { k, M, H, room, apt, keepout, addOutline: (p) => addOutline(p, room.kind), lights, solid, runs: roomInfo.get(room), ceiling: !!walk, notes, sparse, mark, rollback };
+        furnish(ctx);
+        if (ctx.ceiling) downlights(ctx);
+        if (!check) break;
+        const now = reachableRooms(apt, segments, start);
+        if ([...before].every((i) => now.has(i))) break;
+        rollback(snap);
+        notes.push(`${room.kind} ${room.area} m²: ${sparse ? 'left empty' : 'essentials only'}, to keep the way through`);
+      }
     }
   }
   k.build(group, own);
@@ -425,7 +456,7 @@ export function buildFloor(towerKey, floor, apts, walk = null) {
     // start in the hall, looking into the largest room
     // the drawing's entrance hall ("Даҳлез"), else any hall, else the smallest real room
     const rooms = [...walk.data.rooms].sort((p, q) => q.area - p.area);
-    const hall = walk.data.rooms.find((r) => r.tj === 'Даҳлез') ?? walk.data.rooms.find((r) => r.kind === 'hall') ?? rooms[rooms.length - 1];
+    const hall = entranceHall(walk);
     const [sx, sy] = interiorPoint(hall.poly);
     const [tx, ty] = interiorPoint(rooms[0].poly);
     // look the way with the widest clear view (open over the whole field of view, not through a
@@ -466,6 +497,8 @@ export function buildFloor(towerKey, floor, apts, walk = null) {
     plan,
     lights: lightObjects,
     obstacles,
+    segments, // collision lines in plan coordinates (for the checks in tools/)
+    notes, // rooms where something could not be fitted (for the checks in tools/)
     doors: doors.length,
     // Move from (x, z) to (nx, nz) in the scene without walking through walls or out of the flat.
     move(x, z, nx, nz) {
@@ -492,6 +525,63 @@ export function buildFloor(towerKey, floor, apts, walk = null) {
       lightObjects.forEach((l) => l.shadow?.map?.dispose());
     },
   };
+}
+
+/** the drawing's entrance hall ("Даҳлез"), else any hall, else the smallest room */
+function entranceHall(apt) {
+  const rooms = apt.data.rooms;
+  return rooms.find((r) => r.tj === 'Даҳлез') ?? rooms.find((r) => r.kind === 'hall') ?? [...rooms].sort((p, q) => p.area - q.area)[0];
+}
+
+/**
+ * Rooms of a flat reachable on foot from `start`: a 10 cm grid over the flat, cells closer than
+ * 22 cm to a collision line blocked (the visitor keeps 25 cm), flood-filled from the start.
+ */
+function reachableRooms(apt, segments, start) {
+  const out = apt.data.outline, b = bbox(out), step = 0.1, R = 0.22;
+  const nx = Math.ceil((b.x1 - b.x0) / step) + 1, ny = Math.ceil((b.y1 - b.y0) / step) + 1;
+  const blocked = new Uint8Array(nx * ny);
+  const cx = (i) => b.x0 + i * step, cy = (j) => b.y0 + j * step;
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) if (!inside(out, cx(i), cy(j))) blocked[j * nx + i] = 1;
+  for (const [ax, ay, bx, by] of segments) {
+    if (Math.max(ax, bx) < b.x0 - R || Math.min(ax, bx) > b.x1 + R || Math.max(ay, by) < b.y0 - R || Math.min(ay, by) > b.y1 + R) continue;
+    const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - R - b.x0) / step)), i1 = Math.min(nx - 1, Math.ceil((Math.max(ax, bx) + R - b.x0) / step));
+    const j0 = Math.max(0, Math.floor((Math.min(ay, by) - R - b.y0) / step)), j1 = Math.min(ny - 1, Math.ceil((Math.max(ay, by) + R - b.y0) / step));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (!blocked[j * nx + i] && distToSegment(cx(i), cy(j), ax, ay, bx, by).d < R) blocked[j * nx + i] = 1;
+  }
+  // from the free cell nearest the start
+  let s = -1, best = Infinity;
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    if (blocked[j * nx + i]) continue;
+    const d = Math.hypot(cx(i) - start[0], cy(j) - start[1]);
+    if (d < best) [best, s] = [d, j * nx + i];
+  }
+  const seen = new Uint8Array(nx * ny), queue = [s], rooms = new Set();
+  if (s < 0) return rooms;
+  seen[s] = 1;
+  while (queue.length) {
+    const c = queue.pop(), i = c % nx, j = (c - i) / nx;
+    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const ii = i + di, jj = j + dj;
+      if (ii < 0 || jj < 0 || ii >= nx || jj >= ny) continue;
+      const n = jj * nx + ii;
+      if (seen[n] || blocked[n]) continue;
+      seen[n] = 1;
+      queue.push(n);
+    }
+  }
+  apt.data.rooms.forEach((r, k) => {
+    const rb = bbox(r.poly);
+    for (let j = Math.max(0, Math.floor((rb.y0 - b.y0) / step)); j < Math.min(ny, Math.ceil((rb.y1 - b.y0) / step) + 1) && !rooms.has(k); j++) {
+      for (let i = Math.max(0, Math.floor((rb.x0 - b.x0) / step)); i < Math.min(nx, Math.ceil((rb.x1 - b.x0) / step) + 1); i++) {
+        if (seen[j * nx + i] && inside(r.poly, cx(i), cy(j))) {
+          rooms.add(k);
+          break;
+        }
+      }
+    }
+  });
+  return rooms;
 }
 
 // ---------- shell details ----------
@@ -652,25 +742,74 @@ function glazingFrame(k, M, poly, H, roomOf, fitted, glassAt) {
 
 // ---------- fittings from the drawing ----------
 
+/**
+ * The fittings of a flat as drawn: the drawing outlines many of them twice (a bath's rim and its
+ * inner tub, a basin's counter and its bowl), so overlapping outlines are merged into one fitting
+ * (the bounding box of all of them, the point count of the most detailed one).
+ * Returns [{ poly, n, b }] (cached on the flat's data).
+ */
+function fittings(apt) {
+  if (apt.data._fittings) return apt.data._fittings;
+  const items = apt.data.fixtures.map((fx) => ({ b: bbox(fx), n: fx.length }));
+  const overlap = (p, q) => Math.min(p.x1, q.x1) - Math.max(p.x0, q.x0) > 0.02 && Math.min(p.y1, q.y1) - Math.max(p.y0, q.y0) > 0.02;
+  const groups = [];
+  for (const it of items) {
+    const hit = groups.filter((g) => overlap(g.b, it.b));
+    const g = { b: { ...it.b }, n: it.n };
+    for (const h of hit) {
+      g.b = { x0: Math.min(g.b.x0, h.b.x0), y0: Math.min(g.b.y0, h.b.y0), x1: Math.max(g.b.x1, h.b.x1), y1: Math.max(g.b.y1, h.b.y1) };
+      g.n = Math.max(g.n, h.n);
+      groups.splice(groups.indexOf(h), 1);
+    }
+    groups.push(g);
+  }
+  // two basins drawn edge to edge along a wall are one double vanity
+  const basinSized = (g) => g.n < 15 && Math.min(g.b.x1 - g.b.x0, g.b.y1 - g.b.y0) >= 0.3 && Math.max(g.b.x1 - g.b.x0, g.b.y1 - g.b.y0) < 0.95;
+  for (let i = 0; i < groups.length; i++) {
+    for (let j = i + 1; j < groups.length; j++) {
+      const p = groups[i], q = groups[j];
+      if (!basinSized(p) || !basinSized(q) || p.double || q.double) continue;
+      const sameRowY = Math.abs(p.b.y0 - q.b.y0) < 0.05 && Math.abs(p.b.y1 - q.b.y1) < 0.05;
+      const sameRowX = Math.abs(p.b.x0 - q.b.x0) < 0.05 && Math.abs(p.b.x1 - q.b.x1) < 0.05;
+      const gapX = Math.max(p.b.x0, q.b.x0) - Math.min(p.b.x1, q.b.x1), gapY = Math.max(p.b.y0, q.b.y0) - Math.min(p.b.y1, q.b.y1);
+      // side by side along their long sides' direction (x for a row in y, y for a column in x)
+      const wideX = p.b.x1 - p.b.x0 > p.b.y1 - p.b.y0;
+      if ((sameRowY && wideX && gapX < 0.06) || (sameRowX && !wideX && gapY < 0.06)) {
+        p.b = { x0: Math.min(p.b.x0, q.b.x0), y0: Math.min(p.b.y0, q.b.y0), x1: Math.max(p.b.x1, q.b.x1), y1: Math.max(p.b.y1, q.b.y1) };
+        p.double = true;
+        groups.splice(j, 1);
+        j--;
+      }
+    }
+  }
+  apt.data._fittings = groups.map(({ b, n, double }) => ({ b, n, double: !!double, poly: [[b.x0, b.y0], [b.x1, b.y0], [b.x1, b.y1], [b.x0, b.y1]] }));
+  return apt.data._fittings;
+}
+
 function fixtureKind(fx) {
-  const b = bbox(fx), w = b.x1 - b.x0, h = b.y1 - b.y0;
+  const b = fx.b, w = b.x1 - b.x0, h = b.y1 - b.y0;
   const L = Math.max(w, h), S = Math.min(w, h);
   if (S < 0.2) return null; // a line on the drawing (a screen or a step), not a fitting
+  if (fx.double) return 'basin';
   if (L >= 1.6 && S >= 0.55) return 'bath';
   if (L >= 1.25 && S >= 0.45 && L < 1.6) return 'laundry';
-  if (fx.length >= 15 && L < 1) return 'toilet';
+  if (fx.n >= 15 && L < 1) return 'toilet';
   if (S < 0.3 && L > 0.7 && L < 1.3) return 'cabinet';
-  if (L < 0.95 && S >= 0.3) return 'basin';
+  if (fx.double || (L < 0.95 && S >= 0.3)) return 'basin';
   return null;
 }
 
-/** draws a fitting in its outline from the drawing; returns the footprint to walk round, if any */
+/**
+ * Draws a fitting in its outline from the drawing. Returns { box, solid }: the footprint other
+ * pieces keep out of, and whether it is also something to walk round (a WC or a basin is only
+ * stood at: walking up to it must work, or a small WC would be shut off).
+ */
 function placeFixture(k, M, fx, room, H) {
   const kind = fixtureKind(fx);
   if (!kind || !room) return null;
   const isWet = room._wet;
   if (kind === 'basin' && !isWet) return null; // pairs of small rectangles in dry rooms: not furniture
-  const b = bbox(fx), w = b.x1 - b.x0, h = b.y1 - b.y0;
+  const b = fx.b, w = b.x1 - b.x0, h = b.y1 - b.y0;
   // the side against the wall: of the two sides across the depth, the one nearer the room's edge
   const deepAlongY = kind === 'toilet' ? h > w : h < w;
   const wide = deepAlongY ? w : h, deep = deepAlongY ? h : w;
@@ -686,13 +825,12 @@ function placeFixture(k, M, fx, room, H) {
   const c = edge(cands[0].p) <= edge(cands[1].p) ? cands[0] : cands[1];
   k.at(c.p[0], c.p[1], c.f);
   if (kind === 'toilet') F.toilet(k, M, wide, deep, H);
-  else if (kind === 'basin') F.vanity(k, M, Math.max(0.6, wide), H);
+  else if (kind === 'basin') F.vanity(k, M, Math.max(0.6, wide), H, fx.double ? 2 : 1);
   else if (kind === 'bath') F.bathtub(k, M, wide, deep);
   else if (kind === 'laundry') F.laundry(k, M, wide, deep);
   else if (kind === 'cabinet') F.shoeCabinet(k, M, wide, Math.max(0.25, deep));
-  // a WC or a basin is something to stand at, not to walk round (a small WC would be shut off)
-  if (kind === 'toilet' || kind === 'basin') return null;
-  return [[b.x0, b.y0], [b.x1, b.y0], [b.x1, b.y1], [b.x0, b.y1]];
+  const box = kind === 'basin' ? footprint(c.p, c.f, Math.max(0.6, wide), 0, 0.5) : fx.poly;
+  return { box, solid: kind !== 'toilet' && kind !== 'basin' };
 }
 
 // ---------- furniture ----------
@@ -750,6 +888,17 @@ function rectSides(room, r, solid) {
     }
     for (const f of s.free) f.len = f.t1 - f.t0;
     s.free.sort((p, q) => q.len - p.len);
+    // stretches of wall or window: base units (a kitchen run) can stand under a window too
+    s.low = [];
+    cur = null;
+    for (const { t, label } of s.samples) {
+      if (label === 'wall' || label === 'window') {
+        if (!cur) s.low.push((cur = { t0: t - 0.05, t1: t + 0.05 }));
+        else cur.t1 = t + 0.05;
+      } else cur = null;
+    }
+    for (const f of s.low) f.len = f.t1 - f.t0;
+    s.low.sort((p, q) => q.len - p.len);
     s.wall = s.samples.filter((x) => x.label === 'wall').length / Math.max(1, s.samples.length);
     s.windows = s.samples.some((x) => x.label === 'window' || x.label === 'glass');
     // a point on this side, `t` along it and `d` into the room (d = -gap: against the wall)
@@ -813,6 +962,46 @@ function bestWall(sides, need, not = []) {
 
 const opposite = (sides, s) => sides.find((o) => o.n[0] === -s.n[0] && o.n[1] === -s.n[1]);
 
+/**
+ * Fit a piece against the walls: every stretch of every side (longest first; `stretches` 'free'
+ * for solid wall, 'low' for wall or window), the widest size from maxW down to minW, slid along
+ * the stretch from its middle outwards. draw(w, s, t) draws it once the kit is placed.
+ * Returns { s, t, w, fp } or null.
+ */
+function fitAlong(ctx, sides, { minW, maxW, depth, clear = 0, stretches = 'free', not = [], minAcross = 0 }, draw) {
+  const cands = [];
+  for (const s of sides) {
+    if (not.includes(s) || s.across < minAcross) continue;
+    for (const f of s[stretches]) if (f.len >= minW) cands.push({ s, f });
+  }
+  cands.sort((p, q) => q.f.len - p.f.len);
+  for (const { s, f } of cands) {
+    for (let w = Math.min(maxW, f.len - 0.05); w >= minW - 1e-6; w -= 0.2) {
+      const mid = (f.t0 + f.t1) / 2, span = (f.len - w) / 2;
+      for (let o = 0; o <= span + 1e-6; o += 0.15) {
+        for (const t of o ? [mid - o, mid + o] : [mid]) {
+          const fp = place(ctx, s, t, w, depth, () => draw(w, s, t), { clear });
+          if (fp) return { s, t, w, fp };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/** window spans of side s within a piece centred at t, w wide, in the piece's frame x */
+function windowSpans(s, t, w) {
+  const out = [];
+  for (const smp of s.samples) {
+    if (smp.label !== 'window' || Math.abs(smp.t - t) > w / 2 + 0.05) continue;
+    const x = -(smp.t - t); // the piece's frame x runs against the side's direction
+    const last = out[out.length - 1];
+    if (last && Math.abs(last[0] - (x + 0.05)) < 0.11) last[0] = x - 0.05;
+    else out.push([x - 0.05, x + 0.05]);
+  }
+  return out.map(([a, b]) => [Math.min(a, b), Math.max(a, b)]);
+}
+
 function furnish(ctx) {
   const { room, k, M, H } = ctx;
   if (room._wet) return bathroom(ctx);
@@ -825,47 +1014,62 @@ function furnish(ctx) {
 
   switch (room.kind) {
     case 'bedroom': {
-      const bw = Math.min(w, d) >= 2.6 ? 1.6 : 0.9;
-      const spot = bestWall(sides.filter((s) => s.across >= 2.6), bw + 0.2);
-      if (!spot) break;
-      const { s, f } = spot;
-      const t = THREE.MathUtils.clamp((f.t0 + f.t1) / 2, bw / 2 + 0.6, s.L - bw / 2 - 0.6);
-      // rug first (under the bed, collides with nothing)
-      place(ctx, s, t, bw + 1.2, 2.0, () => F.rugAt(k.offset(0, 1.0), M, bw + 1.2, 2.0, M.rugBeige), { collide: false, keep: false, z0: 0.7 });
-      const bedFp = place(ctx, s, t, bw + 0.14, 2.2, () => {
-        F.bed(k, M, bw);
-        F.picture(k.save().offset(0, 0), M, 1.0, 0.7, 1.72, 0, M.oak);
-        k.restore();
-      }, { clear: 0.65 });
-      if (!bedFp) break;
-      for (const sg of [-1, 1]) {
-        const tt = t + sg * (bw / 2 + 0.36);
-        if (tt < 0.25 || tt > s.L - 0.25) continue;
-        place(ctx, s, tt, 0.48, 0.42, () => {
-          const lp = F.nightstand(k, M);
-          void lp;
-        });
+      // the bed's head against a solid wall, with a nightstand each side if there is room: a double
+      // bed if the room allows, else a narrower double or a single
+      let bed = null;
+      for (const bw of Math.min(w, d) >= 2.6 ? [1.6, 1.4, 0.9] : [0.9]) {
+        for (const stands of [true, false]) {
+          const total = bw + 0.14 + (stands ? 1.0 : 0);
+          bed = fitAlong(ctx, sides, { minW: total, maxW: total, depth: 2.2, clear: 0.45, minAcross: 2.65 }, () => {
+            k.save().offset(0, 1.15);
+            F.rugAt(k, M, bw + 1.2, 2.0, M.rugBeige);
+            k.restore();
+            F.bed(k, M, bw);
+            F.picture(k, M, 1.0, 0.7, 1.72, 0, M.oak);
+            if (stands) {
+              for (const sg of [-1, 1]) {
+                k.save().offset(sg * (bw / 2 + 0.36), 0);
+                F.nightstand(k, M);
+                k.restore();
+              }
+            }
+          });
+          if (bed) break;
+        }
+        if (bed) break;
+      }
+      if (!bed) {
+        ctx.notes.push(`bedroom ${room.area} m²: no wall for a bed`);
+        break;
       }
       // wardrobe on another wall
-      const ws = bestWall(sides, 1.0, [s]);
-      if (ws) {
-        const ww = Math.min(2.4, ws.f.len - 0.1);
-        place(ctx, ws.s, (ws.f.t0 + ws.f.t1) / 2, ww, 0.62, () => F.wardrobe(k, M, ww, H), { clear: 0.75 });
+      if (!ctx.sparse) {
+        fitAlong(ctx, sides, { minW: 1.0, maxW: 2.4, depth: 0.62, clear: 0.75 }, (ww) => F.wardrobe(k, M, ww, H));
+        // a plant in a free corner
+        corners(ctx, sides, 0.5, () => F.plant(k, M, 0.85));
       }
-      // a plant in a free corner
-      corners(ctx, sides, 0.5, () => F.plant(k, M, 0.85));
       pendant(ctx, cx, cy, 'drum');
       break;
     }
     case 'living': {
       if (Math.min(w, d) < 2.4) break;
-      const tvSpot = bestWall(sides.filter((s) => s.across >= 3.0), 1.8);
+      const beforeTv = ctx.mark();
+      // a sofa against a wall with the coffee table and a rug in front of it, a picture above it
+      const sofaGroup = (sw2) => {
+        F.sofa(k, M, sw2);
+        k.save().offset(0, 0.97 + 0.45 + 0.48);
+        F.coffeeTable(k, M);
+        k.restore();
+        k.save().offset(0, 1.3);
+        F.rugAt(k, M, sw2 + 0.6, 2.2, M.rugGrey);
+        k.restore();
+        F.picture(k, M, 1.2, 0.8, 1.55, 1, M.blackMetal);
+      };
+      const tv = fitAlong(ctx, sides, { minW: 1.4, maxW: 2.2, depth: 0.44, clear: 0.6, minAcross: 3.0 }, (cw) => F.mediaWall(k, M, cw));
       let sofaSide = null, tvT = null, tvS = null;
-      if (tvSpot) {
-        tvS = tvSpot.s;
-        tvT = THREE.MathUtils.clamp((tvSpot.f.t0 + tvSpot.f.t1) / 2, 1.0, tvS.L - 1.0);
-        const cw = Math.min(2.2, tvSpot.f.len - 0.3);
-        place(ctx, tvS, tvT, cw, 0.44, () => F.mediaWall(k, M, cw), { clear: 0.6 });
+      if (tv) {
+        tvS = tv.s;
+        tvT = tv.t;
         sofaSide = opposite(sides, tvS);
       }
       // sofa facing the TV, about 2.8 m from it (against the far wall in smaller rooms)
@@ -878,6 +1082,17 @@ function furnish(ctx) {
       while (!placed && sw >= 1.7) {
         placed = place(ctx, s, t, sw, 0.97, () => F.sofa(k, M, sw), { z0: back + s.gap });
         if (!placed) sw -= 0.2;
+      }
+      if (!placed) {
+        // against any other solid wall, with the coffee table in front of it
+        const alt = fitAlong(ctx, sides, { minW: 1.7, maxW: 2.6, depth: 2.4, clear: 0.3, not: tvS ? [tvS] : [] }, (sw2) => sofaGroup(sw2));
+        if (!alt && tv) {
+          // the TV took the wall the sofa needs (a square room): sofa first, TV opposite it
+          ctx.rollback(beforeTv);
+          const first = fitAlong(ctx, sides, { minW: 1.7, maxW: 2.6, depth: 2.4, clear: 0.3 }, (sw2) => sofaGroup(sw2));
+          if (first) fitAlong(ctx, [opposite(sides, first.s)].filter(Boolean), { minW: 1.4, maxW: 2.2, depth: 0.44, clear: 0.6 }, (cw) => F.mediaWall(k, M, cw));
+          else ctx.notes.push(`living ${room.area} m²: no place for the sofa`);
+        } else if (!alt) ctx.notes.push(`living ${room.area} m²: no place for the sofa`);
       }
       if (placed) {
         const dz = back + s.gap; // the sofa's back, from the side line
@@ -898,7 +1113,7 @@ function furnish(ctx) {
         }, { z0: dz });
         if (endB < s.L - 0.2) place(ctx, s, endB, 0.5, 0.5, () => F.sideTable(k.offset(0, 0.27), M), { z0: dz });
         const armT = t + sw / 2 + 0.75, armZ = tableZ;
-        if (armT < s.L - 0.45) {
+        if (armT < s.L - 0.45 && !ctx.sparse) {
           const p = s.at(armT, armZ - s.gap);
           const f = s.facing + Math.PI / 2 * (s.u[0] * s.n[1] - s.u[1] * s.n[0] > 0 ? 1 : -1);
           const fp = footprint(p, f + Math.PI, 0.85, -0.42, 0.42);
@@ -914,44 +1129,39 @@ function furnish(ctx) {
           }
         }
       }
-      corners(ctx, sides, 0.5, () => F.plant(k, M, 1.1));
-      corners(ctx, sides, 0.5, () => F.plant(k, M, 0.8));
+      if (!ctx.sparse) {
+        corners(ctx, sides, 0.5, () => F.plant(k, M, 1.1));
+        corners(ctx, sides, 0.5, () => F.plant(k, M, 0.8));
+      }
       pendant(ctx, cx, cy, 'drum');
       break;
     }
     case 'kitchen': {
-      const spot = bestWall(sides, 1.8);
+      // the run along a wall (under a window too: the sink goes there), 1.5 to 4.4 m long
+      const run = fitAlong(ctx, sides, { minW: 1.2, maxW: 4.4, depth: 0.64, clear: 0.9, stretches: 'low' }, (len, s, t) => F.kitchen(k, M, len, H, windowSpans(s, t, len)));
       let runSide = null;
-      if (spot) {
-        const { s, f } = spot;
+      if (!run) ctx.notes.push(`kitchen ${room.area} m²: no wall for the kitchen run`);
+      if (run) {
+        // an island 1.1 m in front of a long run in a deep room
+        const { s, t, w: len } = run;
         runSide = s;
-        const len = Math.min(4.4, f.len - 0.05);
-        const t = (f.t0 + f.t1) / 2;
-        const fp = place(ctx, s, t, len, 0.64, () => {
-          const ls = F.kitchen(k, M, len, H);
-          void ls;
-        });
-        if (fp) {
-          // keep a 1 m walkway in front of the run
-          ctx.keepout.push(footprint(s.at(t, -s.gap), s.facing, len, 0.64, 1.6));
-          if (s.across >= 4.6 && len >= 2.6) {
-            const iw = Math.min(2.2, len - 0.4);
-            const p = s.at(t, -s.gap + 0.64 + 1.1 + 0.45);
-            const ifp = footprint(p, s.facing, iw, -0.45, 1.1);
-            if (fits(ctx, ifp)) {
-              k.at(p[0], p[1], s.facing);
-              F.island(k, M, iw);
-              ctx.addOutline(footprint(p, s.facing, iw + 0.04, -0.47, 0.47));
-              ctx.keepout.push(ifp);
-              if (ctx.ceiling) F.pendants(k, M, [-iw / 4, iw / 4], 0, H, 1.6);
-              light(p[0], p[1], 1.65, true);
-            }
+        if (s.across >= 4.6 && len >= 2.6 && !ctx.sparse) {
+          const iw = Math.min(2.2, len - 0.4);
+          const p = s.at(t, -s.gap + 0.64 + 1.1 + 0.45);
+          const ifp = footprint(p, s.facing, iw, -0.45, 1.1);
+          if (fits(ctx, ifp)) {
+            k.at(p[0], p[1], s.facing);
+            F.island(k, M, iw);
+            ctx.addOutline(footprint(p, s.facing, iw + 0.04, -0.47, 0.47));
+            ctx.keepout.push(ifp);
+            if (ctx.ceiling) F.pendants(k, M, [-iw / 4, iw / 4], 0, H, 1.6);
+            light(p[0], p[1], 1.65, true);
           }
         }
       }
       // dining table in the most open part of the room
       const tw = Math.min(w, d) >= 3.2 ? 1.8 : 1.4;
-      const spotT = openSpot(ctx, r, tw + 0.2, 0.9 + 1.4);
+      const spotT = ctx.sparse ? null : openSpot(ctx, r, tw + 0.2, 0.9 + 1.4);
       if (spotT) {
         const { p, f } = spotT;
         k.at(p[0], p[1], f);
@@ -963,23 +1173,17 @@ function furnish(ctx) {
         }
         ctx.addOutline(footprint([p[0] - Math.cos(f) * 0.45, p[1] - Math.sin(f) * 0.45], f, tw, 0, 0.9));
       }
-      corners(ctx, sides.filter((s) => s !== runSide), 0.45, () => F.plant(k, M, 0.9));
+      if (!ctx.sparse) corners(ctx, sides.filter((s) => s !== runSide), 0.45, () => F.plant(k, M, 0.9));
       break;
     }
     case 'hall': {
-      const spot = bestWall(sides, 1.0);
-      if (spot) {
-        const { s, f } = spot;
-        const cw = Math.min(1.3, f.len - 0.2);
-        place(ctx, s, (f.t0 + f.t1) / 2, cw, 0.36, () => F.console_(k, M, cw), { clear: 0.7 });
-        const other = bestWall(sides, 1.0, [s]);
-        if (other && other.s.across >= 1.3) place(ctx, other.s, (other.f.t0 + other.f.t1) / 2, 0.9, 0.2, () => F.coatRack(k, M, 0.9), { collide: false });
-      }
+      const con = fitAlong(ctx, sides, { minW: 0.8, maxW: 1.3, depth: 0.36, clear: 0.7 }, (cw) => F.console_(k, M, cw));
+      if (!ctx.sparse) fitAlong(ctx, sides, { minW: 0.9, maxW: 0.9, depth: 0.2, clear: 0.6, not: con ? [con.s] : [], minAcross: 1.3 }, () => F.coatRack(k, M, 0.9));
       if (Math.min(w, d) >= 1.5 && Math.max(w, d) >= 3) {
         const long = w > d ? sides[0] : sides[2];
         place(ctx, long, long.L / 2, Math.min(long.L - 0.6, 3), Math.min(1.0, long.across - 0.4), () => F.rugAt(k.offset(0, 0.5), M, Math.min(long.L - 0.6, 3), Math.min(1.0, long.across - 0.4) - 0.05, M.rugGrey), { collide: false, keep: false, z0: (long.across - Math.min(1.0, long.across - 0.4)) / 2 });
       }
-      corners(ctx, sides, 0.45, () => F.plant(k, M, 0.75));
+      if (!ctx.sparse) corners(ctx, sides, 0.45, () => F.plant(k, M, 0.75));
       break;
     }
     case 'storage': {

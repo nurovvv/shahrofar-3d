@@ -12,6 +12,7 @@ const url = opt('url', 'http://localhost:5173/');
 const aptIds = opt('apt', 'V12-7').split(',');
 const [W, H] = opt('size', '1600x1000').split('x').map(Number);
 const query = opt('query', '');
+const only = opt('rooms', '').split(',').filter(Boolean); // e.g. --rooms bath,kitchen
 
 mkdirSync(out, { recursive: true });
 const browser = await chromium.launch({
@@ -34,10 +35,11 @@ for (const aptId of aptIds) {
     app.selectApt(a);
     app.enterWalk(a);
     await new Promise((r) => setTimeout(r, 1200));
-    return a.data.rooms.map((r, i) => ({ i, kind: r.kind, area: r.area }));
+    return a.data.rooms.map((r, i) => ({ i, kind: r.kind, area: r.area, wet: !!r._wet }));
   }, aptId);
   for (const room of rooms) {
     if (room.area < 3 && room.kind !== 'bath') continue;
+    if (only.length && !only.includes(room.kind) && !(only.includes('bath') && room.wet)) continue;
     for (const corner of [0, 1]) {
       const ok = await page.evaluate(({ i, corner }) => {
         const app = window.__app, it = app.interior, r = it.apt.data.rooms[i];

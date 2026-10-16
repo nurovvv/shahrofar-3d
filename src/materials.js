@@ -183,10 +183,13 @@ const LIB = {
   'Railing glass': { color: '#c8d8dc', roughness: 0.04, opacity: 0.2, transparent: true, env: 1 },
   'Railing glass dark': { color: '#2d3d46', roughness: 0.04, opacity: 0.72, transparent: true, env: 1 },
   // ground
-  Asphalt: { set: 'asphalt', tile: 30, color: '#d9d9d9', roughness: 1, normal: 0.8, vary: 0.06 },
+  // asphalt: the photographed set at 6 m a tile (its stains then read as wear, not as blotches),
+  // detiled and a little lighter; concrete paving slabs for the sidewalks
+  Asphalt: { set: 'asphalt', tile: 6, color: '#cfcfcf', roughness: 1, normal: 0.6, vary: 0.05, detile: true },
   'Road line': { color: '#e4e2db', roughness: 0.7 },
-  Sidewalk: { set: 'pavers', tile: 1.9, color: '#e2d8d2', roughness: 1, normal: 0.8, vary: 0.07, detile: true },
-  Paving: { set: 'pavers', tile: 1.9, color: '#e8dfd2', roughness: 1, normal: 0.8, vary: 0.07, detile: true },
+  Sidewalk: { color: '#ffffff', roughness: 0.95, vary: 0.05, env: 0.6 },
+  // the plaza and the sidewalks: drawn pavers (textures.js), the photographed sets are dark and stained
+  Paving: { color: '#ffffff', roughness: 0.95, vary: 0.05, env: 0.6 },
   Kerb: { set: 'concrete', tile: 2, color: '#d9d4ca', roughness: 0.95, normal: 0.6 },
   Lawn: { set: 'grass', tile: 2.4, color: '#88a55a', roughness: 1, normal: 0.9, vary: 0.12, detile: true, tint: '#c4bb78' },
   Grass: { set: 'grass', tile: 2.4, color: '#7f9a52', roughness: 1, normal: 0.9, vary: 0.14, detile: true, tint: '#c4bb78' },
@@ -227,7 +230,7 @@ const LIB = {
 };
 
 // textures made on a canvas (textures.js) for surfaces with no photographed set
-const CANVAS = { 'Pool mosaic': 'mosaic', 'Copper screen': 'copper' };
+const CANVAS = { 'Pool mosaic': 'mosaic', 'Copper screen': 'copper', Sidewalk: 'slabs', Paving: 'plaza' };
 
 let waterNormal = null;
 export const water = []; // normal maps to scroll each frame

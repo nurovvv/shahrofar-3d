@@ -8,6 +8,7 @@ import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { CARS, PEOPLE, TREES, toScene } from './config.js';
 import { addCars, addPeople, addTrees } from './props.js';
 import { PLAYGROUND_TREES } from './playground.js';
+import { keepOffRoads } from './streets.js';
 import { Q } from './quality.js';
 import skyInfo from '../public/env/sky.json';
 
@@ -64,7 +65,7 @@ export function buildWorld(scene, renderer, after = Promise.resolve()) {
     .catch((e) => console.warn('sky', e));
 
   // trees, cars and people (positions from the Blender build)
-  addPeople(scene, PEOPLE, toScene);
+  addPeople(scene, keepOffRoads(PEOPLE), toScene);
   const props = after.then(() => {
     addTrees(scene, TREES.protos, TREES.list, [...TREES.placed, ...PLAYGROUND_TREES], toScene);
     addCars(scene, CARS, toScene);
