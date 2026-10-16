@@ -38,9 +38,9 @@ The walk-through is fitted out in the browser from the floor plans (`src/floor.j
 
 ## Playground and surroundings
 
-- The ground-level playground by the car park is fitted out in the viewer (`src/playground.js`) on the model's rubber surfaces: two play towers with a rope bridge, slides, a climbing wall and a fireman's pole, swings with a nest swing, a roundabout and painted games for older children; a sandpit under a shade sail, a play house, spring riders and a see-saw for small ones; a fence with gates, benches, bins and a sign.
+- The ground-level playground by the car park is fitted out in the viewer (`src/playground.js`) on the model's rubber surfaces: for older children a play structure (two towers, a rope bridge, stairs, a climbing wall, a slide, a tube slide, a climbing net, a fireman's pole), swings with a nest swing, a rope pyramid, a roundabout, an in-ground trampoline, stepping posts and painted games; for small ones a sandpit under a shade sail, a toddler tower, a play house, spring riders, a see-saw and a spinning bowl; poured rubber with impact zones, shade trees, a fence with gates, benches, bins and a sign. In dev builds a layout check reports pieces that overlap or stand too near the fence.
 - The crazy paving of the decks, the hotel terrace and the promenade uses four close tones of one stone; the neighbours' plain massing gets storeys and windows drawn on in the shader.
-- `node tools/shots.mjs build/shots --only playground,playground_eye,cars` for close views.
+- `node tools/shots.mjs build/shots --only playground,playground_top,playground_eye,cars` for close views.
 
 ## Rebuilding the model
 

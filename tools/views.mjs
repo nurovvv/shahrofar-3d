@@ -22,6 +22,7 @@ export const VIEWS = {
   landscape: { pos: [5, 3.5, 92], target: [-12, 1.5, 62] },
   // the ground-level playground by the car park: from above the street, and at a parent's eye height
   playground: { pos: [30, 16, 68], target: [-6, 0, 30] },
+  playground_top: { pos: [-4, 46, 48], target: [-4, 0, 30.5] },
   playground_eye: { pos: [0.5, 1.6, 50], target: [-1, 0.9, 30] },
   // parked cars, close
   cars: { pos: [-26, 2.5, 46], target: [-24, 0.6, 30] },

@@ -125,9 +125,20 @@ export class Kit {
   }
 
   /** tube through points [[x, y, z], ...] */
-  tube(mat, pts, r, seg = 24) {
+  tube(mat, pts, r, seg = 24, radial = 8) {
     const curve = new THREE.CatmullRomCurve3(pts.map((p) => new THREE.Vector3(...p)));
-    return this.add(mat, new THREE.TubeGeometry(curve, seg, r, 8, false));
+    return this.add(mat, new THREE.TubeGeometry(curve, seg, r, radial, false));
+  }
+
+  /** a straight round bar from point a to point b ([x, y, z]) */
+  rod(mat, a, b, r, seg = 6) {
+    const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b), len = A.distanceTo(B);
+    if (len < 1e-4) return this;
+    const g = new THREE.CylinderGeometry(r, r, len, seg, 1);
+    g.translate(0, len / 2, 0);
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize()));
+    g.translate(A.x, A.y, A.z);
+    return this.add(mat, g);
   }
 
   /**
@@ -153,6 +164,12 @@ export class Kit {
 
   build(group, own, { cast = true } = {}) {
     for (const [mat, geos] of this.parts) {
+      // every piece needs the same attributes to merge: normals and (placeholder) UVs
+      for (const geo of geos) {
+        if (!geo.attributes.normal) geo.computeVertexNormals();
+        if (!geo.attributes.uv) geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
+        for (const name of Object.keys(geo.attributes)) if (!['position', 'normal', 'uv'].includes(name)) geo.deleteAttribute(name);
+      }
       const g = mergeGeometries(geos, false);
       geos.forEach((x) => x.dispose());
       if (!g) continue;
